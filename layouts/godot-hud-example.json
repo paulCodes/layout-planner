@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "name": "Godot HUD Example (Deathblood Lazer)",
+  "description": "Stub layout. 1920x1080 canvas for planning HUD elements over a screenshot. Drop a screenshot in via the background image upload and lay icons / bars on top.",
+  "canvas": {
+    "width": 1920,
+    "height": 1080,
+    "background": "#0b0b12",
+    "gridSize": 8,
+    "gridVisible": true,
+    "originOffset": { "x": 0, "y": 0 }
+  },
+  "exportConfig": {
+    "barX": 0,
+    "barY": 0
+  },
+  "elements": [
+    { "id": "label_tl", "type": "text", "name": "TL: Health/Score", "x": 24,   "y": 24,   "w": 200, "h": 20, "text": "Health / Score" },
+    { "id": "label_br", "type": "text", "name": "BR: Minimap",      "x": 1700, "y": 1000, "w": 200, "h": 20, "text": "Minimap area" }
+  ]
+}

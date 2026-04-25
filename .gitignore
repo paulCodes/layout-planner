@@ -1,0 +1,17 @@
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+desktop.ini
+*~
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Node (defensive -- not used here)
+node_modules/
+npm-debug.log*
+
+# Local exports / scratch
+/scratch/
+*.local.json

@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Layout Planner</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Layout Planner</div>
+    <div class="topbar-group">
+      <label class="lbl">Layout
+        <select id="layout-select"></select>
+      </label>
+      <button id="btn-new">New</button>
+      <button id="btn-load">Load JSON</button>
+      <button id="btn-save">Save JSON</button>
+      <input type="file" id="file-load" accept="application/json" hidden />
+    </div>
+    <div class="topbar-group">
+      <label class="lbl">BG Image
+        <input type="file" id="bg-file" accept="image/*" />
+      </label>
+      <label class="lbl">Opacity
+        <input type="range" id="bg-opacity" min="0" max="100" value="80" />
+      </label>
+      <button id="btn-clear-bg">Clear BG</button>
+    </div>
+    <div class="topbar-group">
+      <label class="lbl">Grid
+        <input type="checkbox" id="grid-toggle" checked />
+      </label>
+      <label class="lbl">Snap
+        <input type="checkbox" id="snap-toggle" checked />
+      </label>
+      <span class="hud" id="hud-coords">x: 0  y: 0  zoom: 1.00</span>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <aside class="sidebar left">
+      <h3>Add</h3>
+      <div class="add-buttons">
+        <button data-add="pixel">+ Pixel</button>
+        <button data-add="icon">+ Icon</button>
+        <button data-add="bar">+ Bar</button>
+        <button data-add="group">+ Group</button>
+        <button data-add="text">+ Text</button>
+      </div>
+
+      <h3>Canvas</h3>
+      <div class="grid-2">
+        <label>W <input id="canvas-w" type="number" min="64" step="8" value="800" /></label>
+        <label>H <input id="canvas-h" type="number" min="64" step="8" value="300" /></label>
+      </div>
+
+      <h3>Outline</h3>
+      <ul id="outline" class="outline"></ul>
+    </aside>
+
+    <section class="canvas-wrap" id="canvas-wrap">
+      <div class="canvas-viewport" id="canvas-viewport">
+        <div class="canvas-stage" id="canvas-stage">
+          <canvas id="bg-canvas"></canvas>
+          <div class="grid-layer" id="grid-layer"></div>
+          <div class="elements-layer" id="elements-layer"></div>
+          <div class="marquee" id="marquee" hidden></div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="sidebar right">
+      <h3>Properties</h3>
+      <div id="props" class="props">
+        <p class="muted">Select an element.</p>
+      </div>
+
+      <h3>Export: Lua snippet</h3>
+      <div class="grid-2">
+        <label>BAR_X <input id="bar-x" type="number" value="-55" /></label>
+        <label>BAR_Y <input id="bar-y" type="number" value="0" /></label>
+      </div>
+      <textarea id="export-lua" readonly rows="10" spellcheck="false"></textarea>
+      <button id="btn-copy-lua">Copy Lua</button>
+
+      <h3>Export: JSON</h3>
+      <textarea id="export-json" readonly rows="10" spellcheck="false"></textarea>
+      <button id="btn-copy-json">Copy JSON</button>
+    </aside>
+  </main>
+
+  <footer class="statusbar">
+    <span id="status">Ready.</span>
+    <span class="spacer"></span>
+    <span class="muted">Shortcuts: del=delete, ctrl+d=dup, arrows=nudge 1px, shift+arrows=8px, alt+drag=free, space+drag=pan, wheel=zoom</span>
+  </footer>
+
+  <script type="module" src="script.js"></script>
+</body>
+</html>
