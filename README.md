@@ -9,7 +9,7 @@ No build step. Single ES module page, no bundler, no framework, no dependencies.
 ### Realtime sync mode (preferred)
 
 ```bash
-cd C:/Users/airet/workspaces/tools/layout-planner
+cd path/to/layout-planner
 python serve.py
 ```
 
