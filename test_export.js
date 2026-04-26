@@ -50,9 +50,9 @@ const expected = {
   Icon_MF:  [129, -8],
 
   NextCast: [ICON_X, -54],
-  // POM is intentionally nudged +3,+3 on canvas for visibility,
-  // so it round-trips to (-119, -57), not (ICON_X, -54).
-  POM:      [ICON_X + 3, -57],
+  // POM overlaps NextCast in real WA (toggles via shadowform load condition);
+  // they share the same xOffset/yOffset.
+  POM:      [ICON_X, -54],
 
   PB_GROUP: [0, 0],
 

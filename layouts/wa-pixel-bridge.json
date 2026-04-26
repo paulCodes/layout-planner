@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "schemaVersion": 2,
   "name": "WA Pixel Bridge (Shadow Priest Tracker)",
   "description": "Re-extracted from addons/ShadowPriestTrackerInstaller/ShadowPriestTrackerInstaller.lua. WA convention: yOffset positive = up. Each element has anchorPoint (TOPLEFT or CENTER). Groups may carry an explicit anchor:{x,y} that overrides bbox-derived anchor (used when child math needs a logical center that differs from the visual bbox center). originOffset is the canvas-space anchor for top-level (parentless) elements -- set to PREFIX center so PREFIX_GROUP exports as (0,0). Constants: BAR_X=-55, STRIP_X=-66, ICON_X=-122, ICON_SIZE=53, BAR_W=248. There is no BAR_Y constant in the Lua; bars use direct yOffset values (-54 HP, -90 Mana). gridSize=10 matches the 10px dot spacing in the Lua source so snap aligns with the natural grid.",
@@ -53,7 +53,7 @@
     { "id": "Icon_MF",  "type": "icon", "name": "Icon_MF",  "anchorPoint": "TOPLEFT", "parent": "PREFIX_GROUP", "x": 329, "y": 28, "w": 38, "h": 38, "color": "rgba(168,85,247,0.7)", "lua_template": "xOffset = 129, yOffset = -8" },
 
     { "id": "NextCast", "type": "icon", "name": "NextCast", "anchorPoint": "TOPLEFT", "parent": "PREFIX_GROUP", "x": 78, "y": 74, "w": 53, "h": 53, "color": "rgba(6,182,212,0.55)", "notes": "Shadow mode: shows next spell to cast with keybind. ICON_SIZE=53. OVERLAPS POM in real WA (toggles via shadowform load condition).", "lua_template": "xOffset = ICON_X, yOffset = -54" },
-    { "id": "POM",      "type": "icon", "name": "POM",      "anchorPoint": "TOPLEFT", "parent": "PREFIX_GROUP", "x": 81, "y": 77, "w": 53, "h": 53, "color": "rgba(255,200,80,0.55)", "notes": "Healing mode: Prayer of Mending tracker. Real WA xOffset=ICON_X(-122), yOffset=-54 -- IDENTICAL to NextCast. Nudged +3,+3 on canvas only so both are visible in the planner. The export will therefore show xOffset=-119, yOffset=-57 for POM as a result of the nudge.", "lua_template": "xOffset = ICON_X, yOffset = -54" },
+    { "id": "POM",      "type": "icon", "name": "POM",      "anchorPoint": "TOPLEFT", "parent": "PREFIX_GROUP", "x": 78, "y": 74, "w": 53, "h": 53, "color": "rgba(255,200,80,0.55)", "notes": "Healing mode: Prayer of Mending tracker. Real WA xOffset=ICON_X(-122), yOffset=-54 -- IDENTICAL to NextCast. OVERLAPS NextCast in real WA (toggles via shadowform load condition).", "lua_template": "xOffset = ICON_X, yOffset = -54" },
 
     { "id": "Bar_HP",   "type": "bar", "name": "Bar_HP",   "anchorPoint": "TOPLEFT", "parent": "PB_GROUP", "x": 145, "y": 74,  "w": 248, "h": 22, "color": "rgba(236,72,153,0.85)", "lua_template": "xOffset = BAR_X, yOffset = -54" },
 
