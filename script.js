@@ -93,6 +93,13 @@ async function init() {
   renderAll();
   updateUndoButtons();
   setStatus(`Loaded "${state.layoutSlug}" (${state.layout.elements.length} elements).`);
+
+  // Stale-state detection: if the on-disk file for the active layout has a
+  // higher `version` than the localStorage-saved copy, the user is looking at
+  // an outdated layout. Prompt to reload. Bumping `version` in the JSON file
+  // is how we "publish" updates that should propagate to existing browsers.
+  // Done last so the UI is fully bound before the modal appears.
+  maybePromptVersionUpgrade();
 }
 
 // =============================================================
@@ -218,6 +225,72 @@ function persist() {
     localStorage.setItem(LS_LAST_LAYOUT, state.layoutSlug);
   } catch (e) {
     console.warn("persist failed:", e);
+  }
+}
+
+// =============================================================
+// Reload from disk + version-based stale detection
+//
+// Each layout JSON file carries a top-level `version: <integer>`. The version
+// is preserved when the layout is deep-cloned into state.layout and round-trips
+// through localStorage via persist(). On boot, we compare the on-disk version
+// (from state.builtins[slug]) against the localStorage-saved version. If the
+// file is newer, we prompt the user to discard local changes and reload.
+//
+// To "publish" an update that should propagate to existing browsers, bump the
+// `version` field in the layout's JSON file.
+// =============================================================
+function fileVersionFor(slug) {
+  const b = state.builtins[slug];
+  return (b && typeof b.version === "number") ? b.version : 0;
+}
+function localVersionOf(layout) {
+  return (layout && typeof layout.version === "number") ? layout.version : 0;
+}
+
+function maybePromptVersionUpgrade() {
+  const fileV = fileVersionFor(state.layoutSlug);
+  const localV = localVersionOf(state.layout);
+  if (fileV > localV) {
+    const name = state.layout?.name || state.layoutSlug;
+    const ok = confirm(`The ${name} file has been updated (file v${fileV}, local v${localV}). Reload from disk and discard local changes?`);
+    if (ok) reloadCurrentLayoutFromDisk({ silent: true });
+  }
+}
+
+// Re-fetch the active layout's JSON file fresh from disk, blow away undo
+// history, and overwrite the localStorage entry with the freshly-loaded data.
+// `silent` skips the confirm() prompt (used when the user already accepted a
+// version-upgrade prompt).
+async function reloadCurrentLayoutFromDisk({ silent = false } = {}) {
+  const slug = state.layoutSlug;
+  const meta = LAYOUT_FILES.find(l => l.slug === slug);
+  if (!meta) {
+    setStatus(`No file mapping for layout "${slug}".`);
+    return;
+  }
+  const name = state.layout?.name || slug;
+  if (!silent && !confirm(`Discard local changes and reload ${name} from disk?`)) return;
+
+  try {
+    const r = await fetch(meta.path, { cache: "no-store" });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const fresh = await r.json();
+    state.builtins[slug] = fresh;       // refresh cache so version checks line up
+    state.layout = deepClone(fresh);
+    clearSelection();
+    $("canvas-w").value = state.layout.canvas.width;
+    $("canvas-h").value = state.layout.canvas.height;
+    $("grid-size").value = state.layout.canvas.gridSize ?? 8;
+    $("bar-x").value = state.layout.exportConfig?.barX ?? -55;
+    $("bar-y").value = state.layout.exportConfig?.barY ?? 0;
+    persist();                          // overwrites LS_KEY with freshly-loaded data (incl. version)
+    clearHistory();
+    centerStage();
+    renderAll();
+    setStatus(`Reloaded "${slug}" from disk (v${localVersionOf(state.layout)}).`);
+  } catch (e) {
+    setStatus(`Reload failed: ${e.message}`);
   }
 }
 
@@ -627,6 +700,7 @@ function bindUi() {
   $("btn-save").addEventListener("click", saveLayoutFile);
   $("btn-load").addEventListener("click", () => $("file-load").click());
   $("file-load").addEventListener("change", loadLayoutFile);
+  $("btn-reload").addEventListener("click", () => reloadCurrentLayoutFromDisk());
 
   $("bg-file").addEventListener("change", loadBgImage);
   $("btn-clear-bg").addEventListener("click", () => { state.bgImage = null; redrawBg(); });
@@ -720,6 +794,14 @@ function copyText(t, label) {
 function setStatus(msg) { status.textContent = msg; }
 
 // ----- Switch layout -----
+//
+// NOTE: this deliberately deep-clones from state.builtins[slug], which holds
+// the JSON fetched from disk during init(). We do NOT pull from localStorage
+// when switching layouts -- localStorage only ever holds a single
+// "active layout" snapshot under LS_KEY, keyed by slug. So switching to a
+// different layout always lands on the on-disk version. The reload-from-disk
+// flow + version check exists to handle the OTHER case: the active layout's
+// file was updated and we need to detect that on next page load.
 function switchLayout(slug) {
   const builtin = state.builtins[slug];
   if (!builtin) { setStatus(`No layout for ${slug}`); return; }

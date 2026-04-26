@@ -1,4 +1,5 @@
 {
+  "version": 1,
   "schemaVersion": 1,
   "name": "Godot HUD Example (Deathblood Lazer)",
   "description": "Stub layout. 1920x1080 canvas for planning HUD elements over a screenshot. Drop a screenshot in via the background image upload and lay icons / bars on top.",
