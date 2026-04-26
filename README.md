@@ -1,99 +1,141 @@
 # Layout Planner
 
-A tiny, dependency-free, browser-based layout planner. Drag pixels, icons, and bars on a snap-to-grid canvas. Useful for planning WeakAura pixel bridges (WoW bot use case) and Godot HUDs.
+A vanilla HTML/JS, browser-based interactive layout planner. Drag, resize, and snap small elements (pixels, icons, bars, groups, text) on a canvas, then export the positions as Lua snippets or generic JSON.
 
-No build step. Pure HTML/CSS/JS. Run a local static server and open the page.
+Originally built to plan WeakAura "pixel bridge" layouts for a WoW bot project, but generic enough for any small-element layout work: game HUDs, dashboards, sprite atlases, and similar.
 
-## Launch
+## No build step
+
+Single-file ES module page. No bundler, no framework, no dependencies. Launch with a static file server:
 
 ```bash
 cd C:/Users/airet/workspaces/tools/layout-planner
 python -m http.server 8000
 ```
 
-Then open <http://localhost:8000/> in any modern browser.
+Then open <http://localhost:8000/>. The server is required because the page uses `fetch()` to load the JSON files in `layouts/`. Opening `index.html` over `file://` works for everything except the layouts dropdown.
 
-(`python -m http.server` is required so the page can `fetch()` the JSON files in `layouts/`. Opening `index.html` directly via `file://` will work for everything except the layouts dropdown.)
+## Features
+
+- Drag and resize with snap-to-grid
+- Per-layout grid size stored in the JSON, with a toolbar input that overrides it live
+- Nested groups with `TOPLEFT` and `CENTER` anchors
+- Undo / redo: `Ctrl+Z`, `Ctrl+Shift+Z`, `Ctrl+Y`
+- Arrow-key nudge: 1 px, or one grid cell with `Shift`
+- Background image overlay with opacity slider (drop a screenshot, lay pixels on top)
+- Multi-layout dropdown with version-based stale-state detection and a "Reload from disk" button
+- Exports to Lua snippets and generic JSON, each with a copy-to-clipboard button
+- localStorage autosave on every change
+
+## Keyboard shortcuts
+
+| Key | Action |
+|---|---|
+| `Ctrl+Z` | Undo |
+| `Ctrl+Shift+Z` / `Ctrl+Y` | Redo |
+| `Ctrl+D` | Duplicate selection |
+| `Del` / `Backspace` | Delete selection |
+| Arrow keys | Nudge selection 1 px |
+| `Shift` + arrows | Nudge selection one grid cell |
+| Drag | Move (snap on) |
+| `Alt` + drag | Move freely (no snap) |
+| `Shift` + click | Add to selection |
+| Drag empty space | Marquee select |
+| `Space` + drag | Pan canvas |
+| Mouse wheel | Zoom (clamped 0.5x to 8x) |
+
+Live cursor coordinates are shown in the top bar.
 
 ## Layouts
 
-- `layouts/wa-pixel-bridge.json` -- preloaded with the actual current positions of every dot/bar/icon in `mono-time-savers/addons/ShadowPriestTrackerInstaller/ShadowPriestTrackerInstaller.lua`. Includes 4 RESERVED placeholders for planning future expansion.
-- `layouts/godot-hud-example.json` -- empty 1920x1080 stub for HUD planning.
+Built-in layouts live in `layouts/`:
 
-Switch layouts with the dropdown in the top bar. Layouts auto-save to `localStorage` on every change, so a refresh keeps your work. Use **Save JSON** / **Load JSON** to round-trip files on disk.
+- `wa-pixel-bridge.json`: positions for every dot, bar, and icon in the Shadow Priest WeakAura pixel bridge. Mirrors `addons/ShadowPriestTrackerInstaller/ShadowPriestTrackerInstaller.lua` from the wow-bot project. `gridSize: 10` to match the addon's 10 px dot spacing.
+- `godot-hud-example.json`: empty 1920x1080 stub for HUD planning over a screenshot.
 
-## Background Image
+### Adding a new layout
 
-Click the **BG Image** file picker to drop a screenshot behind the canvas at 1:1 scale. Adjust opacity with the slider. Useful for laying pixels over an actual screen capture.
+1. Drop a JSON file into `layouts/` (see schema below).
+2. Add a `<option>` entry to the `LAYOUT_FILES` array near the top of `script.js`:
 
-## Keyboard Shortcuts
+   ```js
+   const LAYOUT_FILES = [
+     { slug: "wa-pixel-bridge",   path: "layouts/wa-pixel-bridge.json"   },
+     { slug: "godot-hud-example", path: "layouts/godot-hud-example.json" },
+     // add yours here
+   ];
+   ```
 
-| Key                         | Action                            |
-|-----------------------------|-----------------------------------|
-| `Del` / `Backspace`         | Delete selection                  |
-| `Ctrl+D`                    | Duplicate selection               |
-| Arrow keys                  | Nudge selection 1 px              |
-| `Shift` + Arrow keys        | Nudge selection 8 px (one grid)   |
-| Drag                        | Move (snap to 8 px)               |
-| `Alt` + drag                | Move freely (no snap)             |
-| `Shift` + click             | Add to selection                  |
-| Drag empty space            | Marquee select                    |
-| `Space` + drag              | Pan canvas                        |
-| Mouse wheel                 | Zoom (clamped 0.5x .. 8x)         |
+   The dropdown in `index.html` is empty in the source and gets populated at runtime from this array, so no HTML edit is needed.
 
-Coordinates of the cursor (in canvas pixels) are shown in the top bar.
+3. Refresh the page. The new layout appears in the dropdown.
 
-## Export
+## JSON layout schema
 
-The right sidebar live-updates two exports:
-
-- **Lua snippet** -- for each named element, prints `xOffset = BAR_X + N, yOffset = M` so you can paste positions back into a WeakAura installer. The reference `BAR_X` value is editable (default `-55`, matching the Shadow Priest tracker). The Y axis is flipped to match WeakAuras' convention (negative-down from origin).
-- **Generic JSON** -- full layout dump.
-
-Each export has a **Copy** button.
-
-## JSON Layout Schema
+Minimal example:
 
 ```jsonc
 {
+  "version": 1,
   "schemaVersion": 1,
-  "name": "Layout name",
+  "name": "My layout",
   "description": "freeform notes",
   "canvas": {
-    "width":  800,        // px
-    "height": 300,        // px
-    "background": "#101015",
-    "gridSize": 8,        // snap step
-    "gridVisible": true,
-    "originOffset": { "x": 0, "y": 0 }   // optional reference origin used by exports
+    "width": 800,
+    "height": 300,
+    "gridSize": 8,
+    "originOffset": { "x": 0, "y": 0 },
+    "backgroundImage": null
   },
-  "exportConfig": {
-    "barX": -55,          // BAR_X used for the Lua export
-    "barY": 0
-  },
+  "exportConfig": { "barX": -55, "barY": 0 },
   "elements": [
     {
-      "id":     "MC0",
-      "type":   "pixel",  // pixel | icon | bar | group | text
-      "name":   "MC0_HP_Mana_THP",
-      "parent": "PB_GROUP",          // null or another element id
-      "x": 475, "y": 71, "w": 8, "h": 8,
-      "color":  "rgba(0,200,0,1)",   // any CSS colour
-      "text":   "label text",        // text type only
-      "lua_template": "xOffset = BAR_X + 230, yOffset = -79",  // optional comment in Lua export
-      "notes":  "freeform"
+      "id": "MyPixel",
+      "type": "pixel",
+      "name": "MyPixel",
+      "parent": null,
+      "anchorPoint": "TOPLEFT",
+      "x": 100, "y": 50, "w": 8, "h": 8,
+      "color": "rgba(0,200,0,1)",
+      "lua_template": "xOffset = BAR_X + 0, yOffset = -50",
+      "notes": "freeform"
     }
   ]
 }
 ```
 
-Element rules:
+Field notes:
 
-- IDs must be unique inside a layout.
-- A `group` element acts as a folder; child elements set `"parent": "<group-id>"`. Moving the group moves all children.
-- `pixel`, `icon`, `bar`, and `text` are leaf elements.
-- The planner stores absolute canvas coordinates; the Lua exporter computes offsets relative to `BAR_X` / `BAR_Y` and the canvas's `originOffset`. To match the WA addon's convention, set `originOffset` so that `(BAR_X, BAR_Y)` lines up with where you'd want the WA group origin on the canvas.
+- `version`: bump this when you update the on-disk file (see Versioning).
+- `canvas.gridSize`: snap step in pixels. Per-layout. The toolbar's grid input writes back to this field.
+- `canvas.originOffset`: canvas-space anchor for top-level (parentless) elements. Exports compute offsets as `element-anchor minus parent-anchor`.
+- `elements[].type`: one of `pixel`, `icon`, `bar`, `group`, `text`.
+- `elements[].parent`: id of a `group` element, or `null` for top-level.
+- `elements[].anchorPoint`: `TOPLEFT` or `CENTER`. Drives anchor math and exports.
+- `elements[].lua_template`: optional. If the template's numeric `xOffset` matches the computed export, the export uses the template expression (e.g. `BAR_X + 30`) instead of the literal number.
+- `exportConfig.barX` / `barY`: convenience constants for shorthand Lua rendering.
 
-## Hand-editing
+## Versioning
 
-Everything is a single page (`index.html`), one stylesheet (`style.css`), and one script (`script.js`). The script keeps a single `state` object, persists it to `localStorage` after every mutation, and re-renders by rebuilding the elements/outline DOM. Easy to fork. Easy to break. No frameworks.
+Each layout JSON has a top-level `version` integer. localStorage caches the active layout including its `version`. On boot, the planner compares the on-disk version to the cached one. If the file is newer, the user is prompted to discard local changes and reload.
+
+To publish an update that should propagate to existing browsers, bump `version` in the JSON file. The "Reload" toolbar button does the same thing manually.
+
+## Round-trip test
+
+```bash
+node test_export.js
+```
+
+Loads `layouts/wa-pixel-bridge.json`, runs the same anchor math the in-page exporter uses, and asserts every named element exports to its source-of-truth WA `xOffset` / `yOffset` values extracted from `ShadowPriestTrackerInstaller.lua`. Run this after any change to export math or to that layout.
+
+## Original use case
+
+Built to plan a WoW WeakAura pixel bridge for the wow-bot project at `~/workspaces/mono-time-savers/`. The `wa-pixel-bridge.json` layout mirrors the actual addon at `addons/ShadowPriestTrackerInstaller/ShadowPriestTrackerInstaller.lua`. Workflow: drag elements visually to plan a new layout, then copy the exported `xOffset` / `yOffset` values back into the Lua addon source.
+
+## Adding a new project
+
+1. Create a new layout JSON sized for your project (e.g. 1920x1080).
+2. Set `canvas.gridSize` to your project's natural pixel scale (8 for general use, 10 for the WA pixel bridge, 1 for pixel-perfect work).
+3. Optionally set a per-element `lua_template` so the export emits your own constants or macros instead of literal numbers.
+4. Register the layout in `LAYOUT_FILES` in `script.js`.
