@@ -472,16 +472,23 @@ function applyTransform() {
 }
 
 function centerStage() {
-  const r = viewport.getBoundingClientRect();
-  state.pan.x = (r.width - state.layout.canvas.width * state.zoom) / 2;
-  state.pan.y = (r.height - state.layout.canvas.height * state.zoom) / 2;
+  // Stage CSS positions it at left:50%/top:50% of the viewport, so pan is the
+  // additional translate needed to put the canvas's top-left at the viewport's
+  // visual center -- minus half the scaled canvas to truly center it.
+  const cw = state.layout.canvas.width  * state.zoom;
+  const ch = state.layout.canvas.height * state.zoom;
+  state.pan.x = -cw / 2;
+  state.pan.y = -ch / 2;
 }
 
-// Convert page (clientX,clientY) to canvas coords (in canvas pixels)
+// Convert page (clientX,clientY) to canvas coords (in canvas pixels).
+// Uses stage.getBoundingClientRect() so any CSS positioning (left:50%, etc.)
+// plus the transform's translate are handled in one shot -- we just divide by
+// zoom to get from screen-px-relative-to-stage to canvas px.
 function pageToCanvas(px, py) {
-  const r = viewport.getBoundingClientRect();
-  const x = (px - r.left - state.pan.x) / state.zoom;
-  const y = (py - r.top  - state.pan.y) / state.zoom;
+  const r = stage.getBoundingClientRect();
+  const x = (px - r.left) / state.zoom;
+  const y = (py - r.top)  / state.zoom;
   return { x, y };
 }
 
@@ -917,17 +924,19 @@ function onMouseUp(ev) {
 
 function onWheel(ev) {
   ev.preventDefault();
-  const r = viewport.getBoundingClientRect();
-  const mx = ev.clientX - r.left;
-  const my = ev.clientY - r.top;
-  // Zoom factor
+  // Canvas coord under the mouse, BEFORE the zoom change. Use pageToCanvas so
+  // we share its (correct) accounting for stage CSS positioning + transform.
+  const before = pageToCanvas(ev.clientX, ev.clientY);
   const dz = ev.deltaY < 0 ? 1.1 : 1 / 1.1;
   const newZoom = clamp(state.zoom * dz, 0.5, 8);
-  // Adjust pan so zoom centers on mouse
-  const before = { x: (mx - state.pan.x) / state.zoom, y: (my - state.pan.y) / state.zoom };
   state.zoom = newZoom;
-  state.pan.x = mx - before.x * state.zoom;
-  state.pan.y = my - before.y * state.zoom;
+  // Now adjust pan so the same canvas point ends up under the mouse again.
+  // Apply the transform first so getBoundingClientRect reflects the new zoom,
+  // then compute how far the cursor has drifted from `before` in screen px.
+  applyTransform();
+  const after = pageToCanvas(ev.clientX, ev.clientY);
+  state.pan.x += (after.x - before.x) * state.zoom;
+  state.pan.y += (after.y - before.y) * state.zoom;
   applyTransform();
 }
 
