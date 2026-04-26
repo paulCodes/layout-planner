@@ -215,22 +215,27 @@ function renderOutline() {
   outlineEl.innerHTML = "";
   const top = state.layout.elements.filter(e => !e.parent);
   for (const e of top) {
-    outlineEl.appendChild(outlineRow(e, false));
-    if (e.type === "group") {
-      for (const c of childrenOf(e.id)) outlineEl.appendChild(outlineRow(c, true));
-    }
+    renderOutlineNode(e, 0, outlineEl);
   }
 }
-function outlineRow(e, isChild) {
+function renderOutlineNode(e, depth, container) {
+  container.appendChild(outlineRow(e, depth));
+  if (e.type === "group") {
+    for (const c of childrenOf(e.id)) renderOutlineNode(c, depth + 1, container);
+  }
+}
+function outlineRow(e, depth) {
   const li = document.createElement("li");
-  if (isChild) li.classList.add("child");
+  if (depth > 0) li.classList.add("child");
+  li.style.paddingLeft = `${4 + depth * 14}px`;
   if (state.selection.has(e.id)) li.classList.add("selected");
   const badge = document.createElement("span");
   badge.className = "badge";
   badge.style.background = e.color || "transparent";
   li.appendChild(badge);
   const txt = document.createElement("span");
-  txt.textContent = `${e.name || e.id} [${e.type}]`;
+  const ap = e.anchorPoint ? ` <${e.anchorPoint}>` : "";
+  txt.textContent = `${e.name || e.id} [${e.type}]${ap}`;
   li.appendChild(txt);
   li.addEventListener("click", (ev) => {
     if (ev.shiftKey) toggleSelection(e.id); else setSelection([e.id]);
@@ -252,10 +257,21 @@ function renderProps() {
   const e = findEl(id);
   if (!e) { propsEl.innerHTML = `<p class="muted">Missing.</p>`; return; }
 
-  const groups = state.layout.elements.filter(g => g.type === "group");
+  const groups = state.layout.elements.filter(g => g.type === "group" && g.id !== e.id);
   const groupOpts = [`<option value="">(none)</option>`,
     ...groups.map(g => `<option value="${g.id}" ${e.parent === g.id ? "selected" : ""}>${g.name || g.id}</option>`)
   ].join("");
+
+  const ap = e.anchorPoint || "TOPLEFT";
+  const anchorOpts = ["TOPLEFT", "CENTER"].map(a => `<option ${a===ap?"selected":""}>${a}</option>`).join("");
+
+  // Show explicit anchor override only for groups
+  const anchorOverrideRow = e.type === "group"
+    ? `<div class="row split"><label>anchor x / y</label>
+        <input type="number" data-k="anchor.x" value="${e.anchor ? e.anchor.x : ""}" placeholder="(bbox)" />
+        <input type="number" data-k="anchor.y" value="${e.anchor ? e.anchor.y : ""}" placeholder="(bbox)" />
+      </div>`
+    : "";
 
   propsEl.innerHTML = `
     <div class="row"><label>id</label><input data-k="id" value="${escAttr(e.id)}" /></div>
@@ -273,6 +289,8 @@ function renderProps() {
       <input type="number" data-k="w" value="${e.w}" />
       <input type="number" data-k="h" value="${e.h}" />
     </div>
+    <div class="row"><label>anchorPoint</label><select data-k="anchorPoint">${anchorOpts}</select></div>
+    ${anchorOverrideRow}
     <div class="row"><label>color</label><input data-k="color" value="${escAttr(e.color || "")}" /></div>
     <div class="row"><label>parent</label><select data-k="parent">${groupOpts}</select></div>
     ${e.type === "text" ? `<div class="row"><label>text</label><input data-k="text" value="${escAttr(e.text || "")}" /></div>` : ""}
@@ -299,7 +317,22 @@ function renderProps() {
         }
         state.selection = new Set([v]);
       }
-      e[k] = v;
+      if (k === "anchor.x" || k === "anchor.y") {
+        const axis = k.split(".")[1];
+        const raw = ev.target.value;
+        if (raw === "" || raw === null) {
+          // Clear override on this axis. If both axes empty, drop the anchor field.
+          if (e.anchor) {
+            delete e.anchor[axis];
+            if (e.anchor.x === undefined && e.anchor.y === undefined) delete e.anchor;
+          }
+        } else {
+          if (!e.anchor) e.anchor = {};
+          e.anchor[axis] = Number(raw);
+        }
+      } else {
+        e[k] = v;
+      }
       persist();
       renderElements();
       renderOutline();
@@ -314,32 +347,102 @@ function renderProps() {
 function escAttr(s) { return String(s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;"); }
 function escHtml(s) { return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 
+// =============================================================
+// Anchor math helpers
+//
+// Each element has an `anchorPoint` (default "TOPLEFT") that selects
+// which point on its bbox is the WA anchor in canvas space.
+// Groups may additionally carry an explicit { anchor: {x,y} } override
+// that decouples the anchor from the visual bbox -- needed when
+// children are CENTER-anchored to a logical center that does not
+// coincide with the bbox center (e.g. an asymmetric icon row).
+// =============================================================
+function anchorPointOf(el) { return el.anchorPoint || "TOPLEFT"; }
+
+function computeAnchor(el) {
+  // Group with explicit override wins
+  if (el.type === "group" && el.anchor && el.anchor.x !== undefined && el.anchor.y !== undefined) {
+    return { x: el.anchor.x, y: el.anchor.y };
+  }
+  if (anchorPointOf(el) === "CENTER") {
+    return { x: el.x + el.w / 2, y: el.y + el.h / 2 };
+  }
+  return { x: el.x, y: el.y };
+}
+
+function computeParentAnchor(el, originOffset) {
+  if (!el.parent) return { x: originOffset?.x || 0, y: originOffset?.y || 0 };
+  const parent = findEl(el.parent);
+  if (!parent) return { x: originOffset?.x || 0, y: originOffset?.y || 0 };
+  return computeAnchor(parent);
+}
+
+function computeWaOffset(el, originOffset) {
+  const a = computeAnchor(el);
+  const pa = computeParentAnchor(el, originOffset);
+  return { xOffset: a.x - pa.x, yOffset: -(a.y - pa.y) };
+}
+
 function renderExports() {
-  // Lua: print xOffset/yOffset relative to BAR_X
+  // BAR_X / BAR_Y: convenience constants for shorthand rendering of
+  // children whose lua_template uses "xOffset = BAR_X + N".
   const barX = Number($("bar-x").value || 0);
   const barY = Number($("bar-y").value || 0);
   state.layout.exportConfig = { barX, barY };
 
+  const originOffset = state.layout.canvas.originOffset || { x: 0, y: 0 };
   const lines = [];
   lines.push(`-- BAR_X = ${barX}, BAR_Y = ${barY}`);
-  lines.push(`-- Generated by layout-planner. Names map to WeakAura ids.`);
+  lines.push(`-- Generated by layout-planner. Offsets are element-anchor minus parent-anchor (canvas), Y flipped to WA convention.`);
   lines.push("");
+
   for (const e of state.layout.elements) {
     if (!e.name) continue;
-    if (e.type === "group" || e.type === "text") continue;
-    const xRel = e.x - (state.layout.canvas.originOffset?.x || 0);
-    const yRel = e.y - (state.layout.canvas.originOffset?.y || 0);
-    const xOff = xRel - barX;
-    const yOff = -(yRel - barY); // WA Y is negative-down convention from origin
+    if (e.type === "text") continue;
+    const { xOffset, yOffset } = computeWaOffset(e, originOffset);
+    const parentName = e.parent ? (findEl(e.parent)?.name || e.parent) : "(root)";
+    const ap = anchorPointOf(e);
+
+    let xLabel = `xOffset = ${xOffset}`;
+    // If user encoded a BAR_X-relative or named-constant template, prefer it
+    // when the numeric offset matches.
     if (e.lua_template) {
-      lines.push(`-- ${e.name}: ${e.lua_template}`);
+      // Extract the numeric x from the template's xOffset
+      const m = e.lua_template.match(/xOffset\s*=\s*([^,]+?)\s*,/);
+      if (m) {
+        const tplExpr = m[1].trim();
+        const numericFromTpl = evalSimpleExpr(tplExpr, { BAR_X: barX, STRIP_X: -66, ICON_X: -122 });
+        if (numericFromTpl !== null && numericFromTpl === xOffset) {
+          xLabel = `xOffset = ${tplExpr}`;
+        }
+      }
     }
-    lines.push(`-- ${e.name}`);
-    lines.push(`xOffset = BAR_X + ${xOff}, yOffset = ${yOff}`);
+
+    lines.push(`-- ${e.name} (parent: ${parentName}, anchor: ${ap})`);
+    if (e.lua_template) lines.push(`-- template: ${e.lua_template}`);
+    lines.push(`${xLabel}, yOffset = ${yOffset},`);
     lines.push("");
   }
+
   $("export-lua").value = lines.join("\n");
   $("export-json").value = JSON.stringify(state.layout, null, 2);
+}
+
+// Tiny evaluator for "BAR_X + 30", "STRIP_X", "-55", "ICON_X". Returns
+// number or null on parse failure.
+function evalSimpleExpr(expr, vars) {
+  let s = String(expr).trim();
+  for (const [k, v] of Object.entries(vars)) {
+    s = s.replace(new RegExp(`\\b${k}\\b`, "g"), `(${v})`);
+  }
+  if (!/^[-+*/().\d\s]+$/.test(s)) return null;
+  try {
+    // eslint-disable-next-line no-new-func
+    const v = Function(`"use strict";return (${s});`)();
+    return typeof v === "number" && Number.isFinite(v) ? v : null;
+  } catch (_) {
+    return null;
+  }
 }
 
 // =============================================================
