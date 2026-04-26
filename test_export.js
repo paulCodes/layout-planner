@@ -45,7 +45,6 @@ const expected = {
   Icon_VT:  [-39, -8],
   Icon_SWP: [3, -8],
   Icon_MB:  [45, -8],
-  Icon_SF:  [71, -8],
   Icon_SWD: [87, -8],
   Icon_MF:  [129, -8],
 

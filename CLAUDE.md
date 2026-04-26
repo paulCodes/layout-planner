@@ -94,8 +94,8 @@ So your write doesn't need to assign a correct version field -- the server overw
 - **Stale-state issue**: localStorage holds the active layout's full state including its `version`. To force browsers holding an old copy to be prompted to reload, bump the `version` field in the JSON file. The "Reload" toolbar button is the manual escape hatch.
 - **WeakAura sandbox forbids `pcall`.** If you ever modify the source-of-truth Lua addon for the WA, do not introduce `pcall` in `init_code` strings. The WA loader will refuse it.
 - **Y-axis convention differs.** WA uses Y-up (negative-down anchored from `TOPLEFT` means "below the anchor"). Canvas uses Y-down. The exporter flips Y; any future importer must too.
-- **`Icon_SF`** is defined in the WA Lua source but excluded from the active creators list. It is in the planner for completeness and flagged in its `notes`. Don't remove it; don't promote it.
-- **`POM` overlaps `NextCast`** in real WA: same `xOffset` / `yOffset`, toggled via shadowform load condition. The planner nudges POM by `+3, +3` for visibility, and the export math acknowledges the nudged canvas position as the source of truth (round-trips to `(-119, -57)`, not `(ICON_X, -54)`).
+- **`Icon_SF`** was defined in the WA Lua source but excluded from the active creators list (dead code). It has been removed from the planner; if you re-extract the layout from the addon, do not re-add it unless the addon promotes it.
+- **`POM` overlaps `NextCast`** in real WA: same `xOffset` / `yOffset`, toggled via shadowform load condition. In the planner POM now overlaps NextCast exactly (both at `ICON_X, -54`) -- the previous `+3, +3` visibility nudge has been removed so the canvas matches the addon 1:1.
 - **`BUFF_GROUP` children are `CENTER`-anchored relative to `BUFF_GROUP` center**, not relative to `PREFIX_GROUP` or `PB_GROUP`. Verify this when reading code or computing positions by hand.
 
 ## How to add features
