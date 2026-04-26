@@ -11,6 +11,39 @@ const LAYOUT_FILES = [
 const LS_KEY        = "layout-planner.state.v1";
 const LS_LAST_LAYOUT = "layout-planner.lastLayout";
 
+// =============================================================
+// Realtime sync (server-coordinated, optional)
+//
+// When the page is served by serve.py, both this browser AND any external
+// process (e.g. Claude Code editing current-state.json directly) can read +
+// write the layout, with changes propagated in near-realtime via SSE.
+//
+// Protocol invariants (mirrored in serve.py):
+//   - Version is server-assigned. We send the version we last KNEW about;
+//     server validates + increments.
+//   - We optimistically apply local mutations to the UI immediately. After a
+//     debounce, we POST. Server's version-bumped echo (via SSE or POST 200) is
+//     canonical.
+//   - SSE updates received during a drag are queued and applied on dragend
+//     (drop intermediate). This avoids snapping the element out from under
+//     the user mid-drag.
+//   - On 409 conflict the server returns canonical state; we apply it and
+//     LOSE our local change. Single-user system, "last writer wins" with
+//     server arbitrating order.
+// =============================================================
+const sync = {
+  enabled: false,             // becomes true on successful initial fetch
+  localVersion: 0,            // last server version we know about
+  dragInProgress: false,      // mouse-button-down on a drag/resize
+  pendingSseEvent: null,      // latest queued SSE event during drag
+  postTimer: null,            // setTimeout handle for the 500ms debounce
+  postInFlight: false,        // a POST is currently awaiting response
+  postPending: false,         // another change came in while postInFlight; chase it
+  evtSource: null,            // EventSource instance
+  reconnectAttempts: 0,
+};
+const SYNC_DEBOUNCE_MS = 500;
+
 // ----- State -----
 const state = {
   layout: null,            // current layout object (mutated in place)
@@ -100,6 +133,191 @@ async function init() {
   // is how we "publish" updates that should propagate to existing browsers.
   // Done last so the UI is fully bound before the modal appears.
   maybePromptVersionUpgrade();
+
+  // Realtime sync. Only meaningful when served by serve.py; if /state 404s
+  // we silently stay in static-only mode.
+  await syncInit();
+}
+
+// =============================================================
+// Sync implementation
+// =============================================================
+async function syncInit() {
+  setSyncStatus("connecting");
+  try {
+    const r = await fetch("/state", { cache: "no-store" });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const body = await r.json();
+    sync.localVersion = Number(body.version) || 0;
+    if (body.state) {
+      // Server has a non-null state -- this becomes our active layout.
+      // Don't go through commitOp; this isn't a user mutation.
+      state.layout = body.state;
+      // Sync the form widgets to the new layout
+      $("canvas-w").value = state.layout.canvas.width;
+      $("canvas-h").value = state.layout.canvas.height;
+      $("grid-size").value = state.layout.canvas.gridSize ?? 8;
+      $("bar-x").value = state.layout.exportConfig?.barX ?? -55;
+      $("bar-y").value = state.layout.exportConfig?.barY ?? 0;
+      persist();
+      clearHistory();
+      renderAll();
+      setStatus(`Loaded state from server (v${sync.localVersion}).`);
+    }
+    sync.enabled = true;
+    syncOpenEventSource();
+  } catch (e) {
+    // Server unreachable / not a sync server. Fall back to static-only mode.
+    console.info("[sync] disabled (no server):", e.message);
+    setSyncStatus("disconnected", "static-only");
+  }
+}
+
+function syncOpenEventSource() {
+  if (sync.evtSource) {
+    try { sync.evtSource.close(); } catch (_) {}
+  }
+  const es = new EventSource("/events");
+  sync.evtSource = es;
+
+  es.addEventListener("open", () => {
+    sync.reconnectAttempts = 0;
+    setSyncStatus("connected");
+    // On (re)connect always GET /state once to close any gap from missed events.
+    // Skip the very first open right after init -- syncInit already seeded.
+    if (sync._everOpened) {
+      fetch("/state", { cache: "no-store" })
+        .then(r => r.ok ? r.json() : null)
+        .then(body => { if (body) syncApplySnapshot(body); })
+        .catch(() => {});
+    }
+    sync._everOpened = true;
+  });
+
+  es.addEventListener("state", (ev) => {
+    let body;
+    try { body = JSON.parse(ev.data); } catch (_) { return; }
+    syncApplySnapshot(body);
+  });
+
+  es.addEventListener("error", () => {
+    sync.reconnectAttempts++;
+    setSyncStatus("disconnected", `reconnect #${sync.reconnectAttempts}`);
+    // EventSource auto-reconnects with last-event-id. We just update the dot.
+  });
+}
+
+function syncApplySnapshot(body) {
+  const v = Number(body.version) || 0;
+  // Echo of our own POST (or older). Discard.
+  if (v <= sync.localVersion) return;
+
+  // Mid-drag: queue the latest, drop intermediate. Apply on dragend.
+  if (sync.dragInProgress) {
+    sync.pendingSseEvent = body;
+    return;
+  }
+  syncApplyState(body);
+}
+
+function syncApplyState(body) {
+  const v = Number(body.version) || 0;
+  if (body.state) {
+    state.layout = body.state;
+    // re-bind form values so widgets reflect the new layout
+    $("canvas-w").value = state.layout.canvas.width;
+    $("canvas-h").value = state.layout.canvas.height;
+    $("grid-size").value = state.layout.canvas.gridSize ?? 8;
+    $("bar-x").value = state.layout.exportConfig?.barX ?? -55;
+    $("bar-y").value = state.layout.exportConfig?.barY ?? 0;
+  }
+  sync.localVersion = v;
+  // Drop selection that no longer exists
+  for (const id of [...state.selection]) {
+    if (!findEl(id)) state.selection.delete(id);
+  }
+  persist();   // localStorage backup; we do NOT re-POST here
+  renderAll();
+}
+
+// Called from commitOp(), undo(), redo(), and any other mutation site.
+// Coalesces rapid mutations into one POST every SYNC_DEBOUNCE_MS.
+function syncSchedulePost() {
+  if (!sync.enabled) return;
+  if (sync.postTimer) clearTimeout(sync.postTimer);
+  sync.postTimer = setTimeout(syncDoPost, SYNC_DEBOUNCE_MS);
+}
+
+async function syncDoPost() {
+  sync.postTimer = null;
+  if (!sync.enabled) return;
+  if (sync.postInFlight) {
+    // A POST is already in flight; mark that another is needed and let the
+    // current one's continuation re-fire.
+    sync.postPending = true;
+    return;
+  }
+  sync.postInFlight = true;
+  const versionToSend = sync.localVersion;
+  const stateToSend = state.layout;
+  try {
+    const r = await fetch("/state", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ version: versionToSend, state: stateToSend }),
+    });
+    if (r.status === 200) {
+      const body = await r.json();
+      sync.localVersion = Number(body.version) || sync.localVersion;
+    } else if (r.status === 409) {
+      // Conflict: server returns canonical state. Apply it; lose our edit.
+      const body = await r.json();
+      // Honor the dragInProgress guard so we don't yank the canvas mid-drag.
+      if (sync.dragInProgress) {
+        sync.pendingSseEvent = body;
+      } else {
+        syncApplyState(body);
+      }
+      setStatus(`Sync conflict; remote state applied (v${body.version}).`);
+    } else {
+      console.warn("[sync] POST got status", r.status);
+    }
+  } catch (e) {
+    console.warn("[sync] POST failed:", e);
+  } finally {
+    sync.postInFlight = false;
+    if (sync.postPending) {
+      sync.postPending = false;
+      // Fire another debounce to coalesce further changes that piled up.
+      syncSchedulePost();
+    }
+  }
+}
+
+function setSyncStatus(kind, label) {
+  const el = document.getElementById("sync-status");
+  if (!el) return;
+  el.classList.remove("sync-connected", "sync-disconnected", "sync-connecting");
+  el.classList.add(`sync-${kind}`);
+  const lbl = el.querySelector(".sync-label");
+  if (lbl) {
+    lbl.textContent = label || ({
+      connected: "live",
+      connecting: "connecting...",
+      disconnected: "offline",
+    }[kind] || kind);
+  }
+  el.title = `Realtime sync: ${kind}${label ? " (" + label + ")" : ""}`;
+}
+
+// Called from mousedown that starts a drag/resize, and from mouseup.
+function syncSetDragInProgress(flag) {
+  sync.dragInProgress = !!flag;
+  if (!flag && sync.pendingSseEvent) {
+    const ev = sync.pendingSseEvent;
+    sync.pendingSseEvent = null;
+    syncApplyState(ev);
+  }
 }
 
 // =============================================================
@@ -166,6 +384,8 @@ function commitOp() {
   history.future = [];
   history.pending = null;
   updateUndoButtons();
+  // Realtime sync: push our change to the server (debounced).
+  syncSchedulePost();
 }
 
 function cancelOp() {
@@ -193,6 +413,7 @@ function undo() {
   renderAll();
   updateUndoButtons();
   setStatus("Undo.");
+  syncSchedulePost();
 }
 
 function redo() {
@@ -207,6 +428,7 @@ function redo() {
   renderAll();
   updateUndoButtons();
   setStatus("Redo.");
+  syncSchedulePost();
 }
 
 function updateUndoButtons() {
@@ -985,6 +1207,7 @@ function onMouseDown(ev) {
         setSelection([id]);
       }
       beginOp();
+      syncSetDragInProgress(true);
       state.drag = {
         mode: "move",
         startMouse: canvasPt,
@@ -1003,6 +1226,7 @@ function onMouseDown(ev) {
     const id = handleElNode.dataset.id;
     if (!state.selection.has(id)) setSelection([id]);
     beginOp();
+    syncSetDragInProgress(true);
     state.drag = {
       mode: "resize",
       corner: handle.dataset.handle,
@@ -1024,6 +1248,7 @@ function onMouseDown(ev) {
       setSelection([hitId]);
     }
     beginOp();
+    syncSetDragInProgress(true);
     state.drag = {
       mode: "move",
       startMouse: canvasPt,
@@ -1164,6 +1389,10 @@ function onMouseUp(ev) {
   if (d.mode === "move" || d.mode === "resize") {
     commitOp();
   }
+  // Clear the drag-in-progress flag and apply any SSE event we queued during
+  // the drag. If a 409 conflict landed (queued by syncDoPost), that wins;
+  // otherwise the latest external SSE state wins.
+  syncSetDragInProgress(false);
   state.drag = null;
   state.isPanning = false;
 }
@@ -1212,7 +1441,7 @@ function onKeyDown(ev) {
     if (ev.code === "KeyZ" && !ev.shiftKey) {
       ev.preventDefault();
       // If a drag is in flight, abort it cleanly first to avoid stuck state.
-      if (state.drag) { cancelOp(); state.drag = null; }
+      if (state.drag) { cancelOp(); state.drag = null; syncSetDragInProgress(false); }
       undo();
       return;
     }

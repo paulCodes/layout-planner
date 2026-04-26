@@ -31,11 +31,53 @@ CLAUDE.md           this file
 ## Launch + test
 
 ```bash
-python -m http.server 8000   # serve the page
+python serve.py              # serve the page WITH realtime sync (preferred)
+python -m http.server 8000   # serve the page WITHOUT realtime sync (static only)
 node test_export.js          # round-trip exporter test
 ```
 
-The test runner has no dependencies; just Node.
+The test runner has no dependencies; just Node. `serve.py` is stdlib-only Python.
+
+## Realtime sync
+
+When `serve.py` is running, both the browser AND any external process (you, in a terminal) can read and write `current-state.json` and have changes propagate in near-realtime to all clients.
+
+### Wire protocol
+
+| Endpoint | Behavior |
+|---|---|
+| `GET /state` | Returns `{version: int, state: object|null}`. |
+| `POST /state` | Body `{version: N, state: {...}}`. If `N == server's current version`, server bumps to N+1, writes file, broadcasts. Returns `{version: N+1}`. If mismatch, returns `409` with the current `{version, state}`. |
+| `GET /events` | SSE stream. Sends current state immediately on connect; pushes `event: state` messages with `id: <version>` on every state change; heartbeats every 15 s. |
+
+`current-state.json` itself is `{version: int, state: <layout object>}` -- the same shape as `GET /state`.
+
+### How to write to `current-state.json` from this terminal
+
+The mtime watcher in `serve.py` polls every 250 ms and ingests external writes. To make a change:
+
+1. **Read** `current-state.json` first.
+2. **Modify** the `state` field as needed. You may keep the `version` field as-is OR bump it; the watcher will increment the server's authoritative `current_version` regardless and rewrite the file with the new version. Don't try to predict what the version will be -- just write something coherent.
+3. **Write atomically.** Write to a `.tmp` file then rename, OR rewrite directly (mtime/hash dedup is forgiving). Don't leave the file half-flushed for >50 ms.
+
+The server detects the mtime change, reads, computes a SHA-1 of the bytes, and:
+- if the hash matches the last byte sequence the server itself wrote, it ignores the change (echo-suppression);
+- otherwise it parses, increments `current_version`, rewrites the file with the bumped version, and broadcasts to all SSE subscribers.
+
+So your write doesn't need to assign a correct version field -- the server overwrites it with the canonical one within ~250-300 ms. Just don't write malformed JSON.
+
+### Foot-gun invariants (preserve these in any future edit)
+
+1. **Version is server-assigned.** Clients propose; server validates and increments. Never trust a client-supplied version as authoritative.
+2. **Read-modify-write-broadcast is atomic.** A single `state_lock` covers the whole critical section in `serve.py`. Don't release the lock between writing the file and updating `last_written_hash`, or you'll lose the echo-suppression.
+3. **Self-write dedup uses content hash, NOT mtime alone.** The mtime watcher's first check is `hash == last_written_hash`. mtime is just the trigger to look.
+4. **JSON parse retries once on failure** (50 ms sleep) to tolerate writers that flush in two syscalls.
+5. **SSE socket errors are silent** -- the handler removes its subscriber and exits. Don't propagate.
+6. **Heartbeat every 15 s** keeps Windows + corporate proxies from idle-killing the SSE connection.
+7. **Browser queues SSE updates mid-drag** and applies the latest on dragend, dropping intermediate. Don't change this without thinking through "user is dragging the same element Claude just moved" cases.
+8. **On EventSource reconnect, browser GETs `/state`** to close any gap from missed events. Server doesn't replay history.
+9. **Browser optimistically applies local mutations**, then POSTs (debounced 500 ms). Echo (via SSE or POST 200) just bumps `localVersion`.
+10. **Never order events by wall clock.** The monotonic server-assigned `version` is the only source of order.
 
 ## Key invariants
 

@@ -309,6 +309,26 @@ textarea {
 }
 .statusbar .spacer { flex: 1; }
 
+/* Realtime sync status indicator (bottom-right of statusbar) */
+.sync-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-right: 12px;
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--muted);
+}
+.sync-status .sync-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: #555;
+  box-shadow: 0 0 4px rgba(0,0,0,0.6);
+}
+.sync-status.sync-connected   .sync-dot { background: var(--good); }
+.sync-status.sync-disconnected .sync-dot { background: #555; }
+.sync-status.sync-connecting  .sync-dot { background: #fbbf24; }
+
 /* Scrollbars */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: var(--bg); }

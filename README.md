@@ -6,14 +6,34 @@ Originally built to plan WeakAura "pixel bridge" layouts for a WoW bot project, 
 
 ## No build step
 
-Single-file ES module page. No bundler, no framework, no dependencies. Launch with a static file server:
+Single-file ES module page. No bundler, no framework, no dependencies. Two launch options:
+
+### Realtime sync mode (preferred)
 
 ```bash
 cd C:/Users/airet/workspaces/tools/layout-planner
+python serve.py
+```
+
+Then open <http://localhost:8000/>. `serve.py` is a stdlib-only Python server that adds bidirectional realtime sync on top of static file serving (see "Realtime sync" below).
+
+### Static-only mode
+
+```bash
 python -m http.server 8000
 ```
 
-Then open <http://localhost:8000/>. The server is required because the page uses `fetch()` to load the JSON files in `layouts/`. Opening `index.html` over `file://` works for everything except the layouts dropdown.
+Same URL. Loads layouts and lets you edit them, but no realtime sync; the bottom-right indicator will show `static-only`.
+
+The server is required either way because the page uses `fetch()` to load the JSON files in `layouts/`. Opening `index.html` over `file://` works for everything except the layouts dropdown.
+
+## Realtime sync
+
+When run via `python serve.py`, the planner participates in a bidirectional realtime channel between the browser and a single shared state file (`current-state.json`). Any external process (e.g. Claude Code in a terminal) can read and write that file, and the browser will see changes within ~250 ms; conversely, browser edits write through the server and propagate via Server-Sent Events.
+
+Single user only -- there is no conflict resolution beyond "last writer wins, server arbitrates order via a monotonic version counter." See `CLAUDE.md` for the wire protocol and the agent-side editing recipe.
+
+The status indicator at the bottom-right of the page shows the connection state: `live` (green), `connecting...` (yellow), `offline` / `reconnect #N` (gray).
 
 ## Features
 
