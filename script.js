@@ -162,9 +162,15 @@ function redrawBg() {
 
 function renderElements() {
   elementsLayer.innerHTML = "";
-  // Render groups first so children render above
+  // Paint order: groups first (so their bbox sits behind everything), then
+  // non-groups sorted from LARGEST area to SMALLEST, so small elements paint
+  // on top of overlapping larger ones (e.g. dots on top of bars). DOM hit
+  // testing also walks last-sibling-first, but we use a custom hit-test in
+  // onMouseDown -- this ordering is purely about visual occlusion.
   const groups = state.layout.elements.filter(e => e.type === "group");
-  const others = state.layout.elements.filter(e => e.type !== "group");
+  const others = state.layout.elements.filter(e => e.type !== "group")
+    .slice()
+    .sort((a, b) => (b.w * b.h) - (a.w * a.h));
   for (const e of groups) elementsLayer.appendChild(makeElNode(e));
   for (const e of others) elementsLayer.appendChild(makeElNode(e));
 }
@@ -665,6 +671,42 @@ function addElement(type) {
   renderAll();
 }
 
+// ----- Hit testing -----
+//
+// Picks the element under canvas-space (cx, cy). Behavior:
+//   - Tiny elements (< MIN_HIT) get an enlarged virtual hit-target around
+//     their visual center, so 8x8 dots are not pixel-perfect-only.
+//   - All hits get an extra TOL pixels of slack on every edge.
+//   - Non-group hits beat group hits (so clicking a child inside a group
+//     selects the child, never the group).
+//   - Among multiple non-group hits, smallest visual area wins (so a dot
+//     stacked on top of a bar resolves to the dot).
+//   - If only groups are hit (e.g. clicking inside PB_GROUP's empty area),
+//     the smallest group wins (so nested children's parent group beats
+//     the outer ancestor).
+function pickElementAt(cx, cy) {
+  const TOL = 4;        // forgiving slack on every edge, in canvas px
+  const MIN_HIT = 16;   // minimum hit-target side for tiny elements
+  const candidates = [];
+  for (const e of state.layout.elements) {
+    let hx = e.x, hy = e.y, hw = e.w, hh = e.h;
+    if (hw < MIN_HIT) { hx = e.x + e.w / 2 - MIN_HIT / 2; hw = MIN_HIT; }
+    if (hh < MIN_HIT) { hy = e.y + e.h / 2 - MIN_HIT / 2; hh = MIN_HIT; }
+    if (cx >= hx - TOL && cx <= hx + hw + TOL &&
+        cy >= hy - TOL && cy <= hy + hh + TOL) {
+      candidates.push({ id: e.id, area: Math.max(1, e.w * e.h), isGroup: e.type === "group" });
+    }
+  }
+  if (candidates.length === 0) return null;
+  const nonGroups = candidates.filter(c => !c.isGroup);
+  if (nonGroups.length > 0) {
+    nonGroups.sort((a, b) => a.area - b.area);
+    return nonGroups[0].id;
+  }
+  candidates.sort((a, b) => a.area - b.area);
+  return candidates[0].id;
+}
+
 // ----- Mouse handlers -----
 function onMouseDown(ev) {
   if (ev.button !== 0) return;
@@ -680,11 +722,38 @@ function onMouseDown(ev) {
   }
 
   const handle = ev.target.closest(".handle");
-  const elNode = ev.target.closest(".el");
+  const handleElNode = handle ? handle.closest(".el") : null;
+  const groupLabel = ev.target.closest(".group-label");
   const canvasPt = pageToCanvas(ev.clientX, ev.clientY);
 
-  if (handle && elNode) {
-    const id = elNode.dataset.id;
+  // Group label click -> select that group explicitly. The label sits 16px
+  // above its group's bbox, so the canvas-coord hit-test below won't find
+  // the group from a label click.
+  if (groupLabel && !handle) {
+    const groupNode = groupLabel.closest(".el.group");
+    if (groupNode) {
+      const id = groupNode.dataset.id;
+      if (ev.shiftKey) {
+        toggleSelection(id);
+      } else if (!state.selection.has(id)) {
+        setSelection([id]);
+      }
+      state.drag = {
+        mode: "move",
+        startMouse: canvasPt,
+        free: ev.altKey,
+        startEls: snapshotSelection(),
+      };
+      renderAll();
+      ev.preventDefault();
+      return;
+    }
+  }
+
+  // Resize handles win unconditionally -- they only render on selected
+  // elements and are explicit interaction zones.
+  if (handle && handleElNode) {
+    const id = handleElNode.dataset.id;
     if (!state.selection.has(id)) setSelection([id]);
     state.drag = {
       mode: "resize",
@@ -696,12 +765,15 @@ function onMouseDown(ev) {
     return;
   }
 
-  if (elNode) {
-    const id = elNode.dataset.id;
+  // Custom hit-test by canvas coordinate. This bypasses native DOM hit
+  // testing so we get smallest-on-top priority + click tolerance for tiny
+  // elements regardless of paint order or pointer-events config.
+  const hitId = pickElementAt(canvasPt.x, canvasPt.y);
+  if (hitId) {
     if (ev.shiftKey) {
-      toggleSelection(id);
-    } else if (!state.selection.has(id)) {
-      setSelection([id]);
+      toggleSelection(hitId);
+    } else if (!state.selection.has(hitId)) {
+      setSelection([hitId]);
     }
     state.drag = {
       mode: "move",
