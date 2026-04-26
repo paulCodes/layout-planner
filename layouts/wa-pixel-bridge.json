@@ -1,12 +1,12 @@
 {
   "schemaVersion": 2,
   "name": "WA Pixel Bridge (Shadow Priest Tracker)",
-  "description": "Extracted from addons/ShadowPriestTrackerInstaller/ShadowPriestTrackerInstaller.lua. WA convention: yOffset positive = up. Each element has anchorPoint (TOPLEFT or CENTER). Groups may carry an explicit anchor:{x,y} that overrides bbox-derived anchor (used when child math needs a logical center that differs from the visual bbox center). originOffset is the canvas-space anchor for top-level (parentless) elements -- set to PREFIX center so PREFIX_GROUP exports as (0,0). Constants: BAR_X=-55, STRIP_X=-66, ICON_X=-122, ICON_SIZE=53, BAR_W=248.",
+  "description": "Re-extracted from addons/ShadowPriestTrackerInstaller/ShadowPriestTrackerInstaller.lua. WA convention: yOffset positive = up. Each element has anchorPoint (TOPLEFT or CENTER). Groups may carry an explicit anchor:{x,y} that overrides bbox-derived anchor (used when child math needs a logical center that differs from the visual bbox center). originOffset is the canvas-space anchor for top-level (parentless) elements -- set to PREFIX center so PREFIX_GROUP exports as (0,0). Constants: BAR_X=-55, STRIP_X=-66, ICON_X=-122, ICON_SIZE=53, BAR_W=248. There is no BAR_Y constant in the Lua; bars use direct yOffset values (-54 HP, -90 Mana). gridSize=10 matches the 10px dot spacing in the Lua source so snap aligns with the natural grid.",
   "canvas": {
     "width": 800,
     "height": 400,
     "background": "#101015",
-    "gridSize": 8,
+    "gridSize": 10,
     "gridVisible": true,
     "originOffset": { "x": 200, "y": 20 }
   },
@@ -39,15 +39,15 @@
       "x": 134,
       "y": 74,
       "w": 299,
-      "h": 52,
+      "h": 53,
       "color": "rgba(124,58,237,0.10)",
-      "notes": "PixelBridge sub-group. anchorPoint=TOPLEFT but anchored AT PREFIX center (xOffset=0, yOffset=0 relative to PREFIX). Visual bbox encloses HP bar, dot row, MC pixels, Mana bar, ManaTick overlay, BeaconStrip, and Reserved placeholders."
+      "notes": "PixelBridge sub-group. Real WA anchorPoint=CENTER (xOffset=0, yOffset=0 inside PREFIX). Modeled here as TOPLEFT with explicit anchor=(200,20) -- equal to PREFIX center -- so all TOPLEFT children round-trip via simple subtraction. Visual bbox encloses HP bar (145,74,248x22), BeaconStrip (134,74..119,8x8), Dot row (145..365,99,8x8), MC pixels (375/385,99 and 109,8x8), Reserved planner placeholders (395..425,99,8x8), Mana bar (145,110,248x16), ManaTick (145,110,248x2)."
     },
 
     { "id": "Icon_VT",  "type": "icon", "name": "Icon_VT",  "anchorPoint": "TOPLEFT", "parent": "PREFIX_GROUP", "x": 161, "y": 28, "w": 38, "h": 38, "color": "rgba(76,29,149,0.7)",  "lua_template": "xOffset = -39, yOffset = -8" },
     { "id": "Icon_SWP", "type": "icon", "name": "Icon_SWP", "anchorPoint": "TOPLEFT", "parent": "PREFIX_GROUP", "x": 203, "y": 28, "w": 38, "h": 38, "color": "rgba(91,33,182,0.7)",  "lua_template": "xOffset = 3, yOffset = -8" },
     { "id": "Icon_MB",  "type": "icon", "name": "Icon_MB",  "anchorPoint": "TOPLEFT", "parent": "PREFIX_GROUP", "x": 245, "y": 28, "w": 38, "h": 38, "color": "rgba(124,58,237,0.7)", "lua_template": "xOffset = 45, yOffset = -8" },
-    { "id": "Icon_SF",  "type": "icon", "name": "Icon_SF",  "anchorPoint": "TOPLEFT", "parent": "PREFIX_GROUP", "x": 271, "y": 28, "w": 38, "h": 38, "color": "rgba(6,182,212,0.7)",  "notes": "WARN: SF (waX=71) overlaps SWD (waX=87) by 22px in source. ALSO: create_icon_sf is defined in Lua (line 723) but NOT in the installer creators list (lines 2548-2570) -- this is the rotation-row Shadowform icon (separate from Buff_SF in BUFF_GROUP).", "lua_template": "xOffset = 71, yOffset = -8" },
+    { "id": "Icon_SF",  "type": "icon", "name": "Icon_SF",  "anchorPoint": "TOPLEFT", "parent": "PREFIX_GROUP", "x": 271, "y": 28, "w": 38, "h": 38, "color": "rgba(6,182,212,0.7)",  "notes": "WARN: SF (waX=71) overlaps SWD (waX=87) by 22px in source. ALSO: create_icon_sf is defined in Lua (line 721) but NOT in the installer creators list (lines 2548-2570) -- this is the rotation-row Shadowform icon (separate from Buff_SF in BUFF_GROUP). Currently dead in the addon.", "lua_template": "xOffset = 71, yOffset = -8" },
     { "id": "Icon_SWD", "type": "icon", "name": "Icon_SWD", "anchorPoint": "TOPLEFT", "parent": "PREFIX_GROUP", "x": 287, "y": 28, "w": 38, "h": 38, "color": "rgba(236,72,153,0.7)", "notes": "WARN: overlaps Icon_SF.", "lua_template": "xOffset = 87, yOffset = -8" },
     { "id": "Icon_MF",  "type": "icon", "name": "Icon_MF",  "anchorPoint": "TOPLEFT", "parent": "PREFIX_GROUP", "x": 329, "y": 28, "w": 38, "h": 38, "color": "rgba(168,85,247,0.7)", "lua_template": "xOffset = 129, yOffset = -8" },
 
@@ -89,13 +89,13 @@
 
     { "id": "MC0", "type": "pixel", "name": "MC0_HP_Mana_THP",        "anchorPoint": "TOPLEFT", "parent": "PB_GROUP", "x": 375, "y": 99,  "w": 8, "h": 8, "color": "rgba(0,200,0,1)",   "lua_template": "xOffset = BAR_X + 230, yOffset = -79" },
     { "id": "MC1", "type": "pixel", "name": "MC1_Mobs_Range",         "anchorPoint": "TOPLEFT", "parent": "PB_GROUP", "x": 385, "y": 99,  "w": 8, "h": 8, "color": "rgba(0,200,0,1)",   "lua_template": "xOffset = BAR_X + 240, yOffset = -79" },
-    { "id": "MC3", "type": "pixel", "name": "MC3_X_Y_Facing",         "anchorPoint": "TOPLEFT", "parent": "PB_GROUP", "x": 375, "y": 109, "w": 8, "h": 8, "color": "rgba(255,180,0,1)", "lua_template": "xOffset = BAR_X + 230, yOffset = -89" },
-    { "id": "MC4", "type": "pixel", "name": "MC4_FineX_FineY_Speed",  "anchorPoint": "TOPLEFT", "parent": "PB_GROUP", "x": 385, "y": 109, "w": 8, "h": 8, "color": "rgba(255,180,0,1)", "lua_template": "xOffset = BAR_X + 240, yOffset = -89" },
+    { "id": "MC3", "type": "pixel", "name": "MC3_X_Y_Facing",         "anchorPoint": "TOPLEFT", "parent": "PB_GROUP", "x": 375, "y": 109, "w": 8, "h": 8, "color": "rgba(255,180,0,1)", "notes": "Currently broken position -- user is repositioning", "lua_template": "xOffset = BAR_X + 230, yOffset = -89" },
+    { "id": "MC4", "type": "pixel", "name": "MC4_FineX_FineY_Speed",  "anchorPoint": "TOPLEFT", "parent": "PB_GROUP", "x": 385, "y": 109, "w": 8, "h": 8, "color": "rgba(255,180,0,1)", "notes": "Currently broken position -- user is repositioning", "lua_template": "xOffset = BAR_X + 240, yOffset = -89" },
 
-    { "id": "Reserved0", "type": "pixel", "name": "Reserved0", "anchorPoint": "TOPLEFT", "parent": "PB_GROUP", "x": 395, "y": 99, "w": 8, "h": 8, "color": "rgba(80,80,80,1)", "notes": "Inert placeholder for future expansion (planner-only, not in Lua source)", "lua_template": "xOffset = BAR_X + 250, yOffset = -79" },
-    { "id": "Reserved1", "type": "pixel", "name": "Reserved1", "anchorPoint": "TOPLEFT", "parent": "PB_GROUP", "x": 405, "y": 99, "w": 8, "h": 8, "color": "rgba(80,80,80,1)", "notes": "Inert placeholder for future expansion (planner-only, not in Lua source)", "lua_template": "xOffset = BAR_X + 260, yOffset = -79" },
-    { "id": "Reserved2", "type": "pixel", "name": "Reserved2", "anchorPoint": "TOPLEFT", "parent": "PB_GROUP", "x": 415, "y": 99, "w": 8, "h": 8, "color": "rgba(80,80,80,1)", "notes": "Inert placeholder for future expansion (planner-only, not in Lua source)", "lua_template": "xOffset = BAR_X + 270, yOffset = -79" },
-    { "id": "Reserved3", "type": "pixel", "name": "Reserved3", "anchorPoint": "TOPLEFT", "parent": "PB_GROUP", "x": 425, "y": 99, "w": 8, "h": 8, "color": "rgba(80,80,80,1)", "notes": "Inert placeholder for future expansion (planner-only, not in Lua source)", "lua_template": "xOffset = BAR_X + 280, yOffset = -79" },
+    { "id": "Reserved0", "type": "pixel", "name": "Reserved0", "anchorPoint": "TOPLEFT", "parent": "PB_GROUP", "x": 395, "y": 99, "w": 8, "h": 8, "color": "rgba(80,80,80,1)", "notes": "planner-only, not in addon", "lua_template": "// planner-only, not in addon" },
+    { "id": "Reserved1", "type": "pixel", "name": "Reserved1", "anchorPoint": "TOPLEFT", "parent": "PB_GROUP", "x": 405, "y": 99, "w": 8, "h": 8, "color": "rgba(80,80,80,1)", "notes": "planner-only, not in addon", "lua_template": "// planner-only, not in addon" },
+    { "id": "Reserved2", "type": "pixel", "name": "Reserved2", "anchorPoint": "TOPLEFT", "parent": "PB_GROUP", "x": 415, "y": 99, "w": 8, "h": 8, "color": "rgba(80,80,80,1)", "notes": "planner-only, not in addon", "lua_template": "// planner-only, not in addon" },
+    { "id": "Reserved3", "type": "pixel", "name": "Reserved3", "anchorPoint": "TOPLEFT", "parent": "PB_GROUP", "x": 425, "y": 99, "w": 8, "h": 8, "color": "rgba(80,80,80,1)", "notes": "planner-only, not in addon", "lua_template": "// planner-only, not in addon" },
 
     { "id": "Bar_Mana", "type": "bar", "name": "Bar_Mana", "anchorPoint": "TOPLEFT", "parent": "PB_GROUP", "x": 145, "y": 110, "w": 248, "h": 16, "color": "rgba(6,182,212,0.85)",  "lua_template": "xOffset = BAR_X, yOffset = -90" },
 

@@ -44,6 +44,7 @@ button:disabled {
 }
 button:disabled:hover { background: var(--panel-2); }
 input[type="number"] { width: 80px; }
+#grid-size { width: 56px; }
 input[type="range"] { padding: 0; vertical-align: middle; }
 input[type="checkbox"] { vertical-align: middle; }
 textarea {
@@ -208,7 +209,7 @@ textarea {
     linear-gradient(to bottom, var(--grid) 1px, transparent 1px),
     linear-gradient(to right, var(--grid-strong) 1px, transparent 1px),
     linear-gradient(to bottom, var(--grid-strong) 1px, transparent 1px);
-  background-size: 8px 8px, 8px 8px, 64px 64px, 64px 64px;
+  /* background-size set dynamically from canvas.gridSize -- see renderStage(). */
 }
 .elements-layer {
   position: absolute;

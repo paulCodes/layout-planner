@@ -33,6 +33,9 @@
       <label class="lbl">Grid
         <input type="checkbox" id="grid-toggle" checked />
       </label>
+      <label class="lbl">Grid (px)
+        <input type="number" id="grid-size" min="1" max="64" step="1" value="8" />
+      </label>
       <label class="lbl">Snap
         <input type="checkbox" id="snap-toggle" checked />
       </label>
@@ -95,7 +98,7 @@
   <footer class="statusbar">
     <span id="status">Ready.</span>
     <span class="spacer"></span>
-    <span class="muted">Shortcuts: ctrl+z=undo, ctrl+shift+z / ctrl+y=redo, del=delete, ctrl+d=dup, arrows=nudge 1px, shift+arrows=8px, alt+drag=free, space+drag=pan, wheel=zoom</span>
+    <span class="muted">Shortcuts: ctrl+z=undo, ctrl+shift+z / ctrl+y=redo, del=delete, ctrl+d=dup, arrows=nudge 1px, shift+arrows=1 grid cell, alt+drag=free, space+drag=pan, wheel=zoom</span>
   </footer>
 
   <script type="module" src="script.js"></script>

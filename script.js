@@ -84,6 +84,7 @@ async function init() {
 
   $("canvas-w").value = state.layout.canvas.width;
   $("canvas-h").value = state.layout.canvas.height;
+  $("grid-size").value = state.layout.canvas.gridSize ?? 8;
   $("bar-x").value    = state.layout.exportConfig?.barX ?? -55;
   $("bar-y").value    = state.layout.exportConfig?.barY ?? 0;
 
@@ -240,7 +241,16 @@ function renderStage() {
   bgCanvas.height = height;
   gridLayer.style.display = gridVisible ? "block" : "none";
   $("grid-toggle").checked = gridVisible;
+  // Drive grid overlay spacing from canvas.gridSize. Major grid line every 8 cells.
+  const g = clampGrid(state.layout.canvas.gridSize ?? 8);
+  const major = g * 8;
+  gridLayer.style.backgroundSize = `${g}px ${g}px, ${g}px ${g}px, ${major}px ${major}px, ${major}px ${major}px`;
   redrawBg();
+}
+
+function clampGrid(v) {
+  const n = Math.max(1, Math.min(64, Math.round(Number(v) || 8)));
+  return n;
 }
 
 function redrawBg() {
@@ -634,6 +644,26 @@ function bindUi() {
   });
   $("snap-toggle").addEventListener("change", () => { /* no render needed */ });
 
+  // Configurable grid size (per-layout, persists in canvas.gridSize). Drives
+  // the grid overlay spacing AND the snap math used by drag/resize/arrow nudge.
+  $("grid-size").addEventListener("focus", () => beginOp());
+  $("grid-size").addEventListener("input", (e) => {
+    if (!history.pending) beginOp();
+    const g = clampGrid(e.target.value);
+    state.layout.canvas.gridSize = g;
+    persist();
+    renderStage();
+  });
+  $("grid-size").addEventListener("blur", (e) => {
+    // Normalize the visible value back to the clamped integer.
+    e.target.value = clampGrid(state.layout.canvas.gridSize);
+    commitOp();
+  });
+  $("grid-size").addEventListener("change", (e) => {
+    e.target.value = clampGrid(state.layout.canvas.gridSize);
+    commitOp();
+  });
+
   $("canvas-w").addEventListener("focus", () => beginOp());
   $("canvas-w").addEventListener("change", (e) => {
     state.layout.canvas.width = Math.max(64, Number(e.target.value) || 64);
@@ -700,6 +730,7 @@ function switchLayout(slug) {
   clearSelection();
   $("canvas-w").value = state.layout.canvas.width;
   $("canvas-h").value = state.layout.canvas.height;
+  $("grid-size").value = state.layout.canvas.gridSize ?? 8;
   $("bar-x").value = state.layout.exportConfig?.barX ?? -55;
   $("bar-y").value = state.layout.exportConfig?.barY ?? 0;
   persist();
@@ -737,6 +768,7 @@ function loadLayoutFile(ev) {
       clearSelection();
       $("canvas-w").value = state.layout.canvas.width;
       $("canvas-h").value = state.layout.canvas.height;
+      $("grid-size").value = state.layout.canvas.gridSize ?? 8;
       $("bar-x").value = state.layout.exportConfig?.barX ?? -55;
       $("bar-y").value = state.layout.exportConfig?.barY ?? 0;
       persist();
@@ -1128,7 +1160,7 @@ function onKeyDown(ev) {
   if (arrow && state.selection.size > 0) {
     ev.preventDefault();
     beginOp();
-    const step = ev.shiftKey ? 8 : 1;
+    const step = ev.shiftKey ? (state.layout.canvas.gridSize || 8) : 1;
     for (const id of state.selection) {
       const e = findEl(id);
       if (!e) continue;
