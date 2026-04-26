@@ -121,6 +121,7 @@ async function init() {
   $("bar-x").value    = state.layout.exportConfig?.barX ?? -55;
   $("bar-y").value    = state.layout.exportConfig?.barY ?? 0;
 
+  recomputeAllGroupBboxes();
   bindUi();
   centerStage();
   renderAll();
@@ -160,6 +161,7 @@ async function syncInit() {
       $("grid-size").value = state.layout.canvas.gridSize ?? 8;
       $("bar-x").value = state.layout.exportConfig?.barX ?? -55;
       $("bar-y").value = state.layout.exportConfig?.barY ?? 0;
+      recomputeAllGroupBboxes();
       persist();
       clearHistory();
       renderAll();
@@ -240,6 +242,7 @@ function syncApplyState(body) {
   for (const id of [...state.selection]) {
     if (!findEl(id)) state.selection.delete(id);
   }
+  recomputeAllGroupBboxes();
   persist();   // localStorage backup; we do NOT re-POST here
   renderAll();
 }
@@ -347,6 +350,88 @@ function childrenOf(groupId) {
 }
 
 // =============================================================
+// Group bbox auto-recompute
+//
+// Group elements have an x/y/w/h that is purely VISUAL (the dashed outline
+// the user sees on canvas). Export math uses each group's `anchor` override
+// (or, if absent, its anchorPoint-derived position from x/y/w/h) -- see
+// computeAnchor(). To keep the dashed outline wrapping the children as the
+// user drags them, we recompute the bbox after every mutation.
+//
+// Important: we never touch a group's `anchor` override here -- only x/y/w/h.
+// For groups WITH an `anchor` override (the WA layout's PREFIX_GROUP, PB_GROUP,
+// BUFF_GROUP all have one), recomputing the bbox cannot affect exports.
+// For groups WITHOUT an override, the bbox is the anchor -- so the recomputed
+// bbox WILL shift export offsets. This is acceptable: the bbox-as-anchor
+// fallback is only for ad-hoc groups, and "wrap your children" is the
+// expected behavior there too.
+// =============================================================
+function elementBoundingRect(el) {
+  // Returns {x1, y1, x2, y2} in canvas coords. For groups, recurse through
+  // children so a parent group wraps the union of its descendants' visuals.
+  if (el.type === "group") {
+    const kids = childrenOf(el.id);
+    if (kids.length === 0) {
+      return { x1: el.x, y1: el.y, x2: el.x + el.w, y2: el.y + el.h };
+    }
+    let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+    for (const k of kids) {
+      const r = elementBoundingRect(k);
+      if (r.x1 < x1) x1 = r.x1;
+      if (r.y1 < y1) y1 = r.y1;
+      if (r.x2 > x2) x2 = r.x2;
+      if (r.y2 > y2) y2 = r.y2;
+    }
+    return { x1, y1, x2, y2 };
+  }
+  return { x1: el.x, y1: el.y, x2: el.x + el.w, y2: el.y + el.h };
+}
+
+function recomputeGroupBbox(groupId, padding = 4) {
+  const g = findEl(groupId);
+  if (!g || g.type !== "group") return;
+
+  const kids = childrenOf(groupId);
+  if (kids.length === 0) return; // leave bbox alone
+
+  let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+  for (const k of kids) {
+    const r = elementBoundingRect(k);
+    if (r.x1 < x1) x1 = r.x1;
+    if (r.y1 < y1) y1 = r.y1;
+    if (r.x2 > x2) x2 = r.x2;
+    if (r.y2 > y2) y2 = r.y2;
+  }
+  if (!isFinite(x1)) return;
+  g.x = Math.round(x1 - padding);
+  g.y = Math.round(y1 - padding);
+  g.w = Math.round((x2 - x1) + padding * 2);
+  g.h = Math.round((y2 - y1) + padding * 2);
+}
+
+function recomputeAllGroupBboxes() {
+  if (!state.layout || !Array.isArray(state.layout.elements)) return;
+  // Bottom-up: groups with no group-children first, then their parent groups.
+  // Compute depth = number of group ancestors, then sort descending.
+  const groups = state.layout.elements.filter(e => e.type === "group");
+  function depth(g) {
+    let d = 0;
+    let p = g.parent;
+    const seen = new Set();
+    while (p && !seen.has(p)) {
+      seen.add(p);
+      const pe = findEl(p);
+      if (!pe || pe.type !== "group") break;
+      d++;
+      p = pe.parent;
+    }
+    return d;
+  }
+  groups.sort((a, b) => depth(b) - depth(a));
+  for (const g of groups) recomputeGroupBbox(g.id);
+}
+
+// =============================================================
 // Undo / Redo history
 //
 // History stores deep-cloned snapshots of state.layout. An "operation" is
@@ -378,6 +463,9 @@ function beginOp() {
 
 function commitOp() {
   if (!history.pending) return;
+  // Auto-recompute group bboxes BEFORE we diff against the pending snapshot,
+  // so a child move that also resizes its parent group counts as one change.
+  recomputeAllGroupBboxes();
   const cur = JSON.stringify(state.layout);
   if (JSON.stringify(history.pending) === cur) {
     history.pending = null;
@@ -510,6 +598,7 @@ async function reloadCurrentLayoutFromDisk({ silent = false } = {}) {
     $("grid-size").value = state.layout.canvas.gridSize ?? 8;
     $("bar-x").value = state.layout.exportConfig?.barX ?? -55;
     $("bar-y").value = state.layout.exportConfig?.barY ?? 0;
+    recomputeAllGroupBboxes();
     persist();                          // overwrites LS_KEY with freshly-loaded data (incl. version)
     clearHistory();
     centerStage();
@@ -1052,6 +1141,7 @@ function switchLayout(slug) {
   $("grid-size").value = state.layout.canvas.gridSize ?? 8;
   $("bar-x").value = state.layout.exportConfig?.barX ?? -55;
   $("bar-y").value = state.layout.exportConfig?.barY ?? 0;
+  recomputeAllGroupBboxes();
   persist();
   // Layout switch is a pristine state -- clear undo history.
   clearHistory();
@@ -1090,6 +1180,7 @@ function loadLayoutFile(ev) {
       $("grid-size").value = state.layout.canvas.gridSize ?? 8;
       $("bar-x").value = state.layout.exportConfig?.barX ?? -55;
       $("bar-y").value = state.layout.exportConfig?.barY ?? 0;
+      recomputeAllGroupBboxes();
       persist();
       clearHistory();
       centerStage();
