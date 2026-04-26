@@ -17,6 +17,8 @@
       <button id="btn-load">Load JSON</button>
       <button id="btn-save">Save JSON</button>
       <input type="file" id="file-load" accept="application/json" hidden />
+      <button id="btn-undo" title="Undo (Ctrl+Z)" disabled>Undo</button>
+      <button id="btn-redo" title="Redo (Ctrl+Shift+Z / Ctrl+Y)" disabled>Redo</button>
     </div>
     <div class="topbar-group">
       <label class="lbl">BG Image
@@ -93,7 +95,7 @@
   <footer class="statusbar">
     <span id="status">Ready.</span>
     <span class="spacer"></span>
-    <span class="muted">Shortcuts: del=delete, ctrl+d=dup, arrows=nudge 1px, shift+arrows=8px, alt+drag=free, space+drag=pan, wheel=zoom</span>
+    <span class="muted">Shortcuts: ctrl+z=undo, ctrl+shift+z / ctrl+y=redo, del=delete, ctrl+d=dup, arrows=nudge 1px, shift+arrows=8px, alt+drag=free, space+drag=pan, wheel=zoom</span>
   </footer>
 
   <script type="module" src="script.js"></script>

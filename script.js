@@ -90,6 +90,7 @@ async function init() {
   bindUi();
   centerStage();
   renderAll();
+  updateUndoButtons();
   setStatus(`Loaded "${state.layoutSlug}" (${state.layout.elements.length} elements).`);
 }
 
@@ -113,6 +114,98 @@ function uid(prefix = "el") {
 function findEl(id) { return state.layout.elements.find(e => e.id === id); }
 function childrenOf(groupId) {
   return state.layout.elements.filter(e => e.parent === groupId);
+}
+
+// =============================================================
+// Undo / Redo history
+//
+// History stores deep-cloned snapshots of state.layout. An "operation" is
+// bracketed by beginOp() / commitOp() so multi-step mutations (drag, resize,
+// property edits with multiple input events) collapse into a single undo
+// entry. Atomic ops (add/delete/duplicate) call beginOp() then commitOp()
+// around the mutation.
+//
+// Pushing a new entry clears the redo (future) stack -- standard linear
+// undo. Stack is capped at HISTORY_LIMIT.
+// =============================================================
+const HISTORY_LIMIT = 100;
+const history = {
+  past: [],     // stack of layout snapshots
+  future: [],   // redo stack
+  pending: null // snapshot taken at op start, committed on op end
+};
+
+function snapshotLayout() {
+  return JSON.parse(JSON.stringify(state.layout));
+}
+
+function beginOp() {
+  // If an op is already pending (e.g. nested call), keep the earliest
+  // snapshot so we capture the true pre-op state.
+  if (history.pending) return;
+  history.pending = snapshotLayout();
+}
+
+function commitOp() {
+  if (!history.pending) return;
+  const cur = JSON.stringify(state.layout);
+  if (JSON.stringify(history.pending) === cur) {
+    history.pending = null;
+    return;
+  }
+  history.past.push(history.pending);
+  if (history.past.length > HISTORY_LIMIT) history.past.shift();
+  history.future = [];
+  history.pending = null;
+  updateUndoButtons();
+}
+
+function cancelOp() {
+  history.pending = null;
+}
+
+function clearHistory() {
+  history.past = [];
+  history.future = [];
+  history.pending = null;
+  updateUndoButtons();
+}
+
+function undo() {
+  if (!history.past.length) return;
+  // Discard any in-flight op so we don't double-commit a half-state
+  history.pending = null;
+  history.future.push(snapshotLayout());
+  state.layout = history.past.pop();
+  // Clear selection of any ids that no longer exist
+  for (const id of [...state.selection]) {
+    if (!findEl(id)) state.selection.delete(id);
+  }
+  persist();
+  renderAll();
+  updateUndoButtons();
+  setStatus("Undo.");
+}
+
+function redo() {
+  if (!history.future.length) return;
+  history.pending = null;
+  history.past.push(snapshotLayout());
+  state.layout = history.future.pop();
+  for (const id of [...state.selection]) {
+    if (!findEl(id)) state.selection.delete(id);
+  }
+  persist();
+  renderAll();
+  updateUndoButtons();
+  setStatus("Redo.");
+}
+
+function updateUndoButtons() {
+  const u = document.getElementById("btn-undo");
+  const r = document.getElementById("btn-redo");
+  if (u) u.disabled = history.past.length === 0;
+  if (r) r.disabled = history.future.length === 0;
 }
 
 // =============================================================
@@ -311,7 +404,15 @@ function renderProps() {
   `;
 
   for (const inp of propsEl.querySelectorAll("[data-k]")) {
+    // Snapshot at focus, commit on blur or change -- collapses many input
+    // events (typing in a number field) into one undo entry.
+    inp.addEventListener("focus", () => beginOp());
+    inp.addEventListener("blur", () => commitOp());
+    inp.addEventListener("change", () => commitOp());
     inp.addEventListener("input", (ev) => {
+      // Safety net: if focus event was missed (e.g. select dropdown that
+      // fires input without focus), still capture pre-state.
+      if (!history.pending) beginOp();
       const k = ev.target.dataset.k;
       let v = ev.target.value;
       if (["x","y","w","h"].includes(k)) v = Number(v);
@@ -508,6 +609,7 @@ function bindUi() {
     layoutSel.value = LAYOUT_FILES[0].slug; // visual reset
     clearSelection();
     persist();
+    clearHistory();
     renderAll();
     centerStage();
     applyTransform();
@@ -524,21 +626,27 @@ function bindUi() {
   });
 
   $("grid-toggle").addEventListener("change", (e) => {
+    beginOp();
     state.layout.canvas.gridVisible = e.target.checked;
     persist();
     renderStage();
+    commitOp();
   });
   $("snap-toggle").addEventListener("change", () => { /* no render needed */ });
 
+  $("canvas-w").addEventListener("focus", () => beginOp());
   $("canvas-w").addEventListener("change", (e) => {
     state.layout.canvas.width = Math.max(64, Number(e.target.value) || 64);
     persist();
     renderStage();
+    commitOp();
   });
+  $("canvas-h").addEventListener("focus", () => beginOp());
   $("canvas-h").addEventListener("change", (e) => {
     state.layout.canvas.height = Math.max(64, Number(e.target.value) || 64);
     persist();
     renderStage();
+    commitOp();
   });
 
   // Add buttons
@@ -547,8 +655,18 @@ function bindUi() {
   }
 
   // Export bar config
+  $("bar-x").addEventListener("focus", () => beginOp());
   $("bar-x").addEventListener("input", () => { renderExports(); persist(); });
+  $("bar-x").addEventListener("blur", () => commitOp());
+  $("bar-x").addEventListener("change", () => commitOp());
+  $("bar-y").addEventListener("focus", () => beginOp());
   $("bar-y").addEventListener("input", () => { renderExports(); persist(); });
+  $("bar-y").addEventListener("blur", () => commitOp());
+  $("bar-y").addEventListener("change", () => commitOp());
+
+  // Undo / Redo buttons
+  $("btn-undo").addEventListener("click", () => undo());
+  $("btn-redo").addEventListener("click", () => redo());
   $("btn-copy-lua").addEventListener("click",  () => copyText($("export-lua").value, "Lua"));
   $("btn-copy-json").addEventListener("click", () => copyText($("export-json").value, "JSON"));
 
@@ -575,6 +693,8 @@ function setStatus(msg) { status.textContent = msg; }
 function switchLayout(slug) {
   const builtin = state.builtins[slug];
   if (!builtin) { setStatus(`No layout for ${slug}`); return; }
+  // Persist current state before swapping (so it's the dropdown's last-known)
+  persist();
   state.layout = deepClone(builtin);
   state.layoutSlug = slug;
   clearSelection();
@@ -583,6 +703,8 @@ function switchLayout(slug) {
   $("bar-x").value = state.layout.exportConfig?.barX ?? -55;
   $("bar-y").value = state.layout.exportConfig?.barY ?? 0;
   persist();
+  // Layout switch is a pristine state -- clear undo history.
+  clearHistory();
   centerStage();
   renderAll();
   setStatus(`Switched to "${slug}".`);
@@ -618,6 +740,7 @@ function loadLayoutFile(ev) {
       $("bar-x").value = state.layout.exportConfig?.barX ?? -55;
       $("bar-y").value = state.layout.exportConfig?.barY ?? 0;
       persist();
+      clearHistory();
       centerStage();
       renderAll();
       setStatus(`Loaded "${state.layoutSlug}" (${state.layout.elements.length} elements).`);
@@ -649,6 +772,7 @@ function loadBgImage(ev) {
 
 // ----- Add element -----
 function addElement(type) {
+  beginOp();
   const id = uid(type);
   const defaults = {
     pixel: { w: 8,  h: 8,  color: "rgba(124,58,237,0.9)" },
@@ -676,6 +800,7 @@ function addElement(type) {
   setSelection([id]);
   persist();
   renderAll();
+  commitOp();
 }
 
 // ----- Hit testing -----
@@ -745,6 +870,7 @@ function onMouseDown(ev) {
       } else if (!state.selection.has(id)) {
         setSelection([id]);
       }
+      beginOp();
       state.drag = {
         mode: "move",
         startMouse: canvasPt,
@@ -762,6 +888,7 @@ function onMouseDown(ev) {
   if (handle && handleElNode) {
     const id = handleElNode.dataset.id;
     if (!state.selection.has(id)) setSelection([id]);
+    beginOp();
     state.drag = {
       mode: "resize",
       corner: handle.dataset.handle,
@@ -782,6 +909,7 @@ function onMouseDown(ev) {
     } else if (!state.selection.has(hitId)) {
       setSelection([hitId]);
     }
+    beginOp();
     state.drag = {
       mode: "move",
       startMouse: canvasPt,
@@ -918,6 +1046,10 @@ function onMouseUp(ev) {
     marqueeEl.hidden = true;
     renderAll();
   }
+  // Commit any drag/resize op (no-op safe if nothing actually changed)
+  if (d.mode === "move" || d.mode === "resize") {
+    commitOp();
+  }
   state.drag = null;
   state.isPanning = false;
 }
@@ -944,9 +1076,35 @@ function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
 // ----- Keyboard -----
 function onKeyDown(ev) {
-  // Ignore when typing in inputs
+  // Ignore when typing in inputs (also covers contenteditable via activeElement)
+  const ae = document.activeElement;
+  const aeTag = (ae && ae.tagName) || "";
   const tag = (ev.target && ev.target.tagName) || "";
-  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+  const isTyping =
+    tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" ||
+    aeTag === "INPUT" || aeTag === "TEXTAREA" || aeTag === "SELECT" ||
+    (ae && ae.isContentEditable);
+
+  // Undo / Redo. Allowed even without explicit selection. Bail when typing
+  // so the browser's native input undo still works inside fields.
+  if ((ev.ctrlKey || ev.metaKey) && !isTyping) {
+    // Ctrl+Shift+Z OR Ctrl+Y => redo
+    if ((ev.code === "KeyZ" && ev.shiftKey) || ev.code === "KeyY") {
+      ev.preventDefault();
+      redo();
+      return;
+    }
+    // Ctrl+Z => undo
+    if (ev.code === "KeyZ" && !ev.shiftKey) {
+      ev.preventDefault();
+      // If a drag is in flight, abort it cleanly first to avoid stuck state.
+      if (state.drag) { cancelOp(); state.drag = null; }
+      undo();
+      return;
+    }
+  }
+
+  if (isTyping) return;
 
   if (ev.code === "Space") { state.spaceDown = true; viewport.style.cursor = "grab"; ev.preventDefault(); return; }
 
@@ -969,6 +1127,7 @@ function onKeyDown(ev) {
   const arrow = { ArrowLeft: [-1,0], ArrowRight: [1,0], ArrowUp: [0,-1], ArrowDown: [0,1] }[ev.key];
   if (arrow && state.selection.size > 0) {
     ev.preventDefault();
+    beginOp();
     const step = ev.shiftKey ? 8 : 1;
     for (const id of state.selection) {
       const e = findEl(id);
@@ -981,6 +1140,7 @@ function onKeyDown(ev) {
     }
     persist();
     renderAll();
+    commitOp();
   }
 }
 function onKeyUp(ev) {
@@ -988,6 +1148,8 @@ function onKeyUp(ev) {
 }
 
 function deleteSelection() {
+  if (state.selection.size === 0) return;
+  beginOp();
   const ids = new Set(state.selection);
   // Also delete children of any deleted groups
   for (const id of [...ids]) {
@@ -1000,9 +1162,12 @@ function deleteSelection() {
   clearSelection();
   persist();
   renderAll();
+  commitOp();
 }
 
 function duplicateSelection() {
+  if (state.selection.size === 0) return;
+  beginOp();
   const newIds = [];
   for (const id of [...state.selection]) {
     const e = findEl(id);
@@ -1018,4 +1183,5 @@ function duplicateSelection() {
   setSelection(newIds);
   persist();
   renderAll();
+  commitOp();
 }
