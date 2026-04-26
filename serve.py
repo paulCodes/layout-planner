@@ -153,62 +153,72 @@ def _watcher_loop():
     last_mtime = None
     while not shutdown_event.is_set():
         try:
-            st = STATE_PATH.stat()
-            mtime = st.st_mtime_ns
-        except FileNotFoundError:
-            mtime = None
+            try:
+                st = STATE_PATH.stat()
+                mtime = st.st_mtime_ns
+            except FileNotFoundError:
+                mtime = None
 
-        if mtime is not None and mtime != last_mtime:
-            last_mtime = mtime
-            data, h = _read_state_file()
-            if data is None:
-                continue
+            if mtime is not None and mtime != last_mtime:
+                last_mtime = mtime
+                data, h = _read_state_file()
+                if data is None:
+                    pass
+                else:
+                    # Self-write echo? Skip.
+                    skip = False
+                    with state_lock:
+                        if h == last_written_hash:
+                            skip = True
 
-            # Self-write echo? Skip.
-            with state_lock:
-                if h == last_written_hash:
-                    continue
-
-            # External write. Try to parse; on JSONDecodeError, the writer may
-            # still be flushing -- sleep 50ms and retry once.
-            obj = None
-            for attempt in range(2):
-                try:
-                    obj = json.loads(data.decode("utf-8"))
-                    break
-                except (json.JSONDecodeError, UnicodeDecodeError):
-                    if attempt == 0:
-                        time.sleep(0.05)
-                        data, h = _read_state_file()
-                        if data is None:
-                            break
-                        # And re-check echo with the newly read bytes
-                        with state_lock:
-                            if h == last_written_hash:
-                                obj = None
-                                break
-                    else:
-                        sys.stderr.write(f"[serve] WARN: {STATE_PATH} unparseable, skipping watcher tick\n")
+                    if not skip:
+                        # External write. Try to parse; on JSONDecodeError, the writer may
+                        # still be flushing -- sleep 50ms and retry once.
                         obj = None
-            if obj is None:
-                continue
+                        for attempt in range(2):
+                            try:
+                                obj = json.loads(data.decode("utf-8"))
+                                break
+                            except (json.JSONDecodeError, UnicodeDecodeError):
+                                if attempt == 0:
+                                    time.sleep(0.05)
+                                    data, h = _read_state_file()
+                                    if data is None:
+                                        break
+                                    # And re-check echo with the newly read bytes
+                                    with state_lock:
+                                        if h == last_written_hash:
+                                            obj = None
+                                            break
+                                else:
+                                    sys.stderr.write(f"[serve] WARN: {STATE_PATH} unparseable, skipping watcher tick\n")
+                                    obj = None
 
-            ext_state = obj.get("state", None)
-            # Hold the lock for the full read-modify-write-broadcast.
-            with state_lock:
-                # Re-check echo under lock (POST may have just landed)
-                if h == last_written_hash:
-                    continue
-                current_version += 1
-                current_state = ext_state
-                payload_bytes = _serialize(current_version, current_state)
-                last_written_hash = _atomic_write(payload_bytes)
-                # mtime will tick again from our own write -- the next iteration
-                # will see hash == last_written_hash and skip.
-                last_mtime = STATE_PATH.stat().st_mtime_ns
-                broadcast_version = current_version
-                broadcast_state = current_state
-            _broadcast(broadcast_version, broadcast_state)
+                        if obj is not None:
+                            ext_state = obj.get("state", None)
+                            broadcast_version = None
+                            broadcast_state = None
+                            # Hold the lock for the full read-modify-write-broadcast.
+                            with state_lock:
+                                # Re-check echo under lock (POST may have just landed)
+                                if h != last_written_hash:
+                                    current_version += 1
+                                    current_state = ext_state
+                                    payload_bytes = _serialize(current_version, current_state)
+                                    last_written_hash = _atomic_write(payload_bytes)
+                                    # mtime will tick again from our own write -- the next iteration
+                                    # will see hash == last_written_hash and skip. The stat may race
+                                    # with an external delete; treat missing as "no mtime change".
+                                    try:
+                                        last_mtime = STATE_PATH.stat().st_mtime_ns
+                                    except FileNotFoundError:
+                                        pass
+                                    broadcast_version = current_version
+                                    broadcast_state = current_state
+                            if broadcast_version is not None:
+                                _broadcast(broadcast_version, broadcast_state)
+        except Exception as e:
+            sys.stderr.write(f"[serve] WARN: watcher loop error: {e!r}\n")
 
         # 250ms poll. Sleep in small chunks so shutdown is responsive.
         for _ in range(5):

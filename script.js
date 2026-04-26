@@ -152,7 +152,8 @@ async function syncInit() {
     if (body.state) {
       // Server has a non-null state -- this becomes our active layout.
       // Don't go through commitOp; this isn't a user mutation.
-      state.layout = body.state;
+      // Deep-clone to avoid mutation aliasing with the parsed fetch body.
+      state.layout = deepClone(body.state);
       // Sync the form widgets to the new layout
       $("canvas-w").value = state.layout.canvas.width;
       $("canvas-h").value = state.layout.canvas.height;
@@ -223,7 +224,10 @@ function syncApplySnapshot(body) {
 function syncApplyState(body) {
   const v = Number(body.version) || 0;
   if (body.state) {
-    state.layout = body.state;
+    // Deep-clone to avoid mutation aliasing -- mirrors the pattern used by
+    // localStorage restore, layout switch, and reload-from-disk. If body.state
+    // is null we leave state.layout unchanged (don't overwrite with null).
+    state.layout = deepClone(body.state);
     // re-bind form values so widgets reflect the new layout
     $("canvas-w").value = state.layout.canvas.width;
     $("canvas-h").value = state.layout.canvas.height;
@@ -1004,6 +1008,17 @@ function bindUi() {
   window.addEventListener("keydown", onKeyDown);
   window.addEventListener("keyup", onKeyUp);
   window.addEventListener("resize", () => { /* keep stage where it is */ });
+
+  // If focus is yanked mid-drag (alt-tab, system dialog, tab switch), the
+  // mouseup event may never reach us and sync.dragInProgress would stick true
+  // forever -- queueing SSE updates that never apply. Force-clear here.
+  // syncSetDragInProgress(false) also flushes any pendingSseEvent.
+  window.addEventListener("blur", () => {
+    if (sync.dragInProgress) syncSetDragInProgress(false);
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden && sync.dragInProgress) syncSetDragInProgress(false);
+  });
 }
 
 function copyText(t, label) {
