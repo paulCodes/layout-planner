@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "name": "WA Pixel Bridge (Shadow Priest Tracker)",
-  "description": "Extracted from addons/ShadowPriestTrackerInstaller/ShadowPriestTrackerInstaller.lua. All offsets are TOPLEFT relative to the WA group origin. BAR_X=-55, STRIP_X=-66, ICON_X=-122 in the source. WA convention: yOffset positive = up. Canvas convention: y increases DOWN. Conversion: canvas.y = originOffset.y - waYOffset, canvas.x = originOffset.x + waXOffset. originOffset shifts the layout into the visible canvas area.",
+  "description": "Extracted from addons/ShadowPriestTrackerInstaller/ShadowPriestTrackerInstaller.lua. All offsets are TOPLEFT relative to the WA group origin (PREFIX group, anchorPoint=CENTER). BAR_X=-55, STRIP_X=-66, ICON_X=-122, ICON_SIZE=53, BAR_W=248. WA convention: yOffset positive = up. Canvas convention: y increases DOWN. Conversion: canvas.y = originOffset.y - waYOffset, canvas.x = originOffset.x + waXOffset. originOffset shifts the layout into the visible canvas area. NOTE: BUFF_GROUP children use anchorPoint=CENTER relative to BUFF_GROUP center, so their canvas coords cannot be derived from the BAR_X-based export math; lua_template captures the true xOffset/yOffset values.",
   "canvas": {
     "width": 800,
-    "height": 300,
+    "height": 400,
     "background": "#101015",
     "gridSize": 8,
     "gridVisible": true,
@@ -16,23 +16,39 @@
   },
   "elements": [
     {
+      "id": "PREFIX_GROUP",
+      "type": "group",
+      "name": "PREFIX_GROUP",
+      "x": 78,
+      "y": 28,
+      "w": 355,
+      "h": 227,
+      "color": "rgba(236,72,153,0.05)",
+      "notes": "Outer WA group (id=PREFIX, anchorPoint=CENTER). Top-level container that holds the spell-icon row, NextCast, POM, ManaTick, PB_GROUP (sub-bridge), and BUFF_GROUP. This bbox encloses all child elements on the canvas."
+    },
+
+    {
       "id": "PB_GROUP",
       "type": "group",
       "name": "PB_GROUP",
+      "parent": "PREFIX_GROUP",
       "x": 134,
       "y": 28,
       "w": 299,
       "h": 99,
       "color": "rgba(124,58,237,0.10)",
-      "notes": "PixelBridge group bbox encloses buff icons (top), HP bar, dot row, MC pixels, Mana bar, BeaconStrip (left side), and Reserved placeholders. lua_template xOffsets are relative to BAR_X (-55) for bars/dots, STRIP_X (-66) for beacon strip, and absolute (relative to PREFIX) for buff icons."
+      "notes": "PixelBridge sub-group bbox encloses HP bar, dot row, MC pixels, Mana bar, ManaTick overlay, BeaconStrip, and Reserved placeholders. lua_template xOffsets are relative to BAR_X (-55) for bars/dots, STRIP_X (-66) for beacon strip."
     },
 
-    { "id": "Icon_VT",  "type": "icon", "name": "Icon_VT",  "parent": "PB_GROUP", "x": 161, "y": 28, "w": 38, "h": 38, "color": "rgba(76,29,149,0.7)",  "lua_template": "xOffset = -39, yOffset = -8" },
-    { "id": "Icon_SWP", "type": "icon", "name": "Icon_SWP", "parent": "PB_GROUP", "x": 203, "y": 28, "w": 38, "h": 38, "color": "rgba(91,33,182,0.7)",  "lua_template": "xOffset = 3,   yOffset = -8" },
-    { "id": "Icon_MB",  "type": "icon", "name": "Icon_MB",  "parent": "PB_GROUP", "x": 245, "y": 28, "w": 38, "h": 38, "color": "rgba(124,58,237,0.7)", "lua_template": "xOffset = 45,  yOffset = -8" },
-    { "id": "Icon_SF",  "type": "icon", "name": "Icon_SF",  "parent": "PB_GROUP", "x": 271, "y": 28, "w": 38, "h": 38, "color": "rgba(6,182,212,0.7)",  "notes": "WARN: SF (waX=71) overlaps SWD (waX=87) by 22px in source.", "lua_template": "xOffset = 71,  yOffset = -8" },
-    { "id": "Icon_SWD", "type": "icon", "name": "Icon_SWD", "parent": "PB_GROUP", "x": 287, "y": 28, "w": 38, "h": 38, "color": "rgba(236,72,153,0.7)", "notes": "WARN: overlaps SF.", "lua_template": "xOffset = 87,  yOffset = -8" },
-    { "id": "Icon_MF",  "type": "icon", "name": "Icon_MF",  "parent": "PB_GROUP", "x": 329, "y": 28, "w": 38, "h": 38, "color": "rgba(168,85,247,0.7)", "lua_template": "xOffset = 129, yOffset = -8" },
+    { "id": "Icon_VT",  "type": "icon", "name": "Icon_VT",  "parent": "PREFIX_GROUP", "x": 161, "y": 28, "w": 38, "h": 38, "color": "rgba(76,29,149,0.7)",  "lua_template": "xOffset = -39, yOffset = -8" },
+    { "id": "Icon_SWP", "type": "icon", "name": "Icon_SWP", "parent": "PREFIX_GROUP", "x": 203, "y": 28, "w": 38, "h": 38, "color": "rgba(91,33,182,0.7)",  "lua_template": "xOffset = 3,   yOffset = -8" },
+    { "id": "Icon_MB",  "type": "icon", "name": "Icon_MB",  "parent": "PREFIX_GROUP", "x": 245, "y": 28, "w": 38, "h": 38, "color": "rgba(124,58,237,0.7)", "lua_template": "xOffset = 45,  yOffset = -8" },
+    { "id": "Icon_SF",  "type": "icon", "name": "Icon_SF",  "parent": "PREFIX_GROUP", "x": 271, "y": 28, "w": 38, "h": 38, "color": "rgba(6,182,212,0.7)",  "notes": "WARN: SF (waX=71) overlaps SWD (waX=87) by 22px in source. ALSO: create_icon_sf is defined in Lua (line 723) but NOT in the installer creators list (lines 2548-2570) -- this is the rotation-row Shadowform icon (separate from Buff_SF which is the buff-tracker icon in BUFF_GROUP).", "lua_template": "xOffset = 71,  yOffset = -8" },
+    { "id": "Icon_SWD", "type": "icon", "name": "Icon_SWD", "parent": "PREFIX_GROUP", "x": 287, "y": 28, "w": 38, "h": 38, "color": "rgba(236,72,153,0.7)", "notes": "WARN: overlaps Icon_SF.", "lua_template": "xOffset = 87,  yOffset = -8" },
+    { "id": "Icon_MF",  "type": "icon", "name": "Icon_MF",  "parent": "PREFIX_GROUP", "x": 329, "y": 28, "w": 38, "h": 38, "color": "rgba(168,85,247,0.7)", "lua_template": "xOffset = 129, yOffset = -8" },
+
+    { "id": "NextCast", "type": "icon", "name": "NextCast", "parent": "PREFIX_GROUP", "x": 78, "y": 74, "w": 53, "h": 53, "color": "rgba(6,182,212,0.55)", "notes": "Shadow mode: shows next spell to cast with keybind. ICON_SIZE=53. OVERLAPS POM in real WA (toggles via shadowform load condition).", "lua_template": "xOffset = ICON_X, yOffset = -54" },
+    { "id": "POM",      "type": "icon", "name": "POM",      "parent": "PREFIX_GROUP", "x": 81, "y": 77, "w": 53, "h": 53, "color": "rgba(255,200,80,0.55)", "notes": "Healing mode: Prayer of Mending tracker. Real WA xOffset=ICON_X(-122), yOffset=-54 -- IDENTICAL to NextCast (they OVERLAP in-game and toggle via shadowform load). Nudged +3,+3 on canvas only so both are visible in the planner.", "lua_template": "xOffset = ICON_X, yOffset = -54" },
 
     { "id": "Bar_HP",   "type": "bar", "name": "Bar_HP",   "parent": "PB_GROUP", "x": 145, "y": 74,  "w": 248, "h": 22, "color": "rgba(236,72,153,0.85)", "lua_template": "xOffset = BAR_X, yOffset = -54" },
 
@@ -77,6 +93,28 @@
     { "id": "Reserved2", "type": "pixel", "name": "Reserved2", "parent": "PB_GROUP", "x": 415, "y": 99, "w": 8, "h": 8, "color": "rgba(80,80,80,1)", "notes": "Inert placeholder for future expansion (planner-only, not in Lua source)", "lua_template": "xOffset = BAR_X + 270, yOffset = -79" },
     { "id": "Reserved3", "type": "pixel", "name": "Reserved3", "parent": "PB_GROUP", "x": 425, "y": 99, "w": 8, "h": 8, "color": "rgba(80,80,80,1)", "notes": "Inert placeholder for future expansion (planner-only, not in Lua source)", "lua_template": "xOffset = BAR_X + 280, yOffset = -79" },
 
-    { "id": "Bar_Mana", "type": "bar", "name": "Bar_Mana", "parent": "PB_GROUP", "x": 145, "y": 110, "w": 248, "h": 16, "color": "rgba(6,182,212,0.85)",  "lua_template": "xOffset = BAR_X, yOffset = -90" }
+    { "id": "Bar_Mana", "type": "bar", "name": "Bar_Mana", "parent": "PB_GROUP", "x": 145, "y": 110, "w": 248, "h": 16, "color": "rgba(6,182,212,0.85)",  "lua_template": "xOffset = BAR_X, yOffset = -90" },
+
+    { "id": "Bar_ManaTick", "type": "bar", "name": "Bar_ManaTick", "parent": "PB_GROUP", "x": 145, "y": 110, "w": 248, "h": 2, "color": "rgba(255,235,80,0.95)", "notes": "Thin 2px overlay on top of Mana bar -- shows mana tick position. Sits at the top edge of Bar_Mana (same xy origin, only 2px tall).", "lua_template": "xOffset = BAR_X, yOffset = -90" },
+
+    {
+      "id": "BUFF_GROUP",
+      "type": "group",
+      "name": "BUFF_GROUP",
+      "parent": "PREFIX_GROUP",
+      "x": 154,
+      "y": 225,
+      "w": 220,
+      "h": 30,
+      "color": "rgba(34,197,94,0.10)",
+      "notes": "Buff/consumable tracker -- separate WA group from PB_GROUP. In WA, this group is anchorPoint=CENTER with xOffset=4, yOffset=-129 relative to PREFIX center. Children also use anchorPoint=CENTER and are positioned by xOffset relative to BUFF_GROUP center. Canvas placement assumes PREFIX center at (200, 111) so BUFF_GROUP center lands at (204, 240). Group bbox is the union of the 6 child icons' canvas bounds."
+    },
+
+    { "id": "Buff_SF",    "type": "icon", "name": "Buff_SF",    "parent": "BUFF_GROUP", "x": 154, "y": 225, "w": 30, "h": 30, "color": "rgba(147,51,234,0.75)", "notes": "Shadowform buff tracker. CENTER-anchored to BUFF_GROUP center. Real WA xOffset=-35, yOffset=0 (relative to BUFF_GROUP CENTER). Distinct from Icon_SF (rotation row).", "lua_template": "xOffset = -35, yOffset = 0" },
+    { "id": "Buff_Fort",  "type": "icon", "name": "Buff_Fort",  "parent": "BUFF_GROUP", "x": 189, "y": 225, "w": 30, "h": 30, "color": "rgba(34,197,94,0.75)",  "notes": "Power Word: Fortitude (R5) + Prayer of Fortitude (R2). CENTER-anchored. Real WA xOffset=0, yOffset=0 relative to BUFF_GROUP CENTER.", "lua_template": "xOffset = 0, yOffset = 0" },
+    { "id": "Buff_IF",    "type": "icon", "name": "Buff_IF",    "parent": "BUFF_GROUP", "x": 224, "y": 225, "w": 30, "h": 30, "color": "rgba(251,146,60,0.75)", "notes": "Inner Fire R7. CENTER-anchored. Real WA xOffset=35, yOffset=0 relative to BUFF_GROUP CENTER.", "lua_template": "xOffset = 35, yOffset = 0" },
+    { "id": "Buff_Flask", "type": "icon", "name": "Buff_Flask", "parent": "BUFF_GROUP", "x": 274, "y": 225, "w": 30, "h": 30, "color": "rgba(20,184,166,0.75)", "notes": "Flask of Pure Death (raid-only). CENTER-anchored. Real WA xOffset=85, yOffset=0 relative to BUFF_GROUP CENTER.", "lua_template": "xOffset = 85, yOffset = 0" },
+    { "id": "Buff_Oil",   "type": "icon", "name": "Buff_Oil",   "parent": "BUFF_GROUP", "x": 309, "y": 225, "w": 30, "h": 30, "color": "rgba(132,204,22,0.75)", "notes": "Brilliant Wizard/Mana Oil (raid-only). CENTER-anchored. Real WA xOffset=120, yOffset=0 relative to BUFF_GROUP CENTER.", "lua_template": "xOffset = 120, yOffset = 0" },
+    { "id": "Buff_Food",  "type": "icon", "name": "Buff_Food",  "parent": "BUFF_GROUP", "x": 344, "y": 225, "w": 30, "h": 30, "color": "rgba(234,179,8,0.75)",  "notes": "TBC food buff (raid-only). CENTER-anchored. Real WA xOffset=155, yOffset=0 relative to BUFF_GROUP CENTER.", "lua_template": "xOffset = 155, yOffset = 0" }
   ]
 }
